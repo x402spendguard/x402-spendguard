@@ -1,5 +1,7 @@
 # x402-spendguard
 
+[![CI](https://github.com/x402spendguard/x402-spendguard/actions/workflows/ci.yml/badge.svg)](https://github.com/x402spendguard/x402-spendguard/actions/workflows/ci.yml)
+
 A spend firewall for AI agents that pay via [x402](https://x402.org).
 
 It sits between your agent and the x402 payment step and enforces policy **before**
