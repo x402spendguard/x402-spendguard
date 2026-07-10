@@ -1,0 +1,79 @@
+# x402-spendguard
+
+A spend firewall for AI agents that pay via [x402](https://x402.org).
+
+It sits between your agent and the x402 payment step and enforces policy **before**
+any payment is signed or settled. Settlement is irreversible, so the only safe place
+to say "no" is *before* it happens.
+
+**Contact:** Kevin Brown, x402.spendguard@gmail.com
+
+## Why
+
+An agent that can pay can be *made* to pay — by prompt injection, a compromised tool,
+or a runaway loop. The headline failure modes are wallet drains: payment redirected to
+an attacker address, or repeated / oversized payments. `x402-spendguard` is a small,
+auditable guard you run yourself that makes those impossible within limits you set.
+
+## v1 scope — anti-drain + signature integrity
+
+v1 enforces, before any payment is signed:
+
+**Anti-drain**
+- **Kill switch** — halt all payments instantly.
+- **Destination allowlist** — only pay `(address, chain)` pairs you've approved (defeats payment-redirect injection). An empty allowlist denies everything: secure by default.
+- **Spend caps** — per-request, per-domain, and global budgets, denominated per `(asset, chain)`.
+
+**Signature integrity** — because the x402 signature commits to the *money*, not the *request*, v1 also checks the authorization about to be signed against the challenge you actually received:
+- **Amount match** — the signed `value` must equal the challenge amount. (v1 facilitators otherwise accept overpayment.)
+- **Recipient match** — the signed `to` must equal the challenge `payTo`.
+- **Lifetime bound** — `validBefore` must respect the challenge's `maxTimeoutSeconds`, a bound no facilitator enforces.
+
+v1 does **not** do: replay/nonce protection, the `upto` (metered) scheme, or enforcement against a compromised agent process — all deferred (see below). Provided AS IS, without warranty (see LICENSE).
+
+## What it is — and is not
+
+This guard **screens the signature**, not just the offer: it interposes where the payment authorization is built, so it sees the actual struct before it is signed. That is what lets it enforce the signature-integrity checks above — checks an offer-screening guard structurally cannot make. (See [docs/prior-art.md](docs/prior-art.md) for how this relates to other tools; they are complementary, not competing.)
+
+Two limits we hold ourselves to, stated up front:
+
+1. **It is not more enforceable than any in-process guard.** An agent whose code an attacker controls calls the signer directly and bypasses it. The guard gives you *visibility into what is about to be signed*, not *authority over whether it is signed*. It stops an honest agent that has been lied to — prompt injection, a compromised tool, a runaway loop — not an agent whose code is owned. Raising that ceiling (a key-holding local daemon; on-chain delegation) is the roadmap, not v1.
+2. **Durable, crash-safe spend accounting is a claim of intent until its tests pass.** Hold us to it — see [REQUIREMENTS.md](REQUIREMENTS.md) (ACCT-01/02/03, CLOCK-01).
+
+## Design principles
+
+- **Fail closed.** Every ambiguous case — a policy error, an engine exception, a missing field — results in **deny**. A guard that fails open is not a guard.
+- **Mechanism, not policy.** The guard enforces the deterministic policy *you* write; it forms no opinions of its own. No heuristic "this looks suspicious" judgments — that would be the guard authoring policy — so, no anomaly detection.
+- **No egress.** The guard makes no network calls and ships no telemetry. Your payment data never leaves your machine. Absent, not opt-out.
+- **Small, auditable core.** The security-critical logic is a pure function with zero runtime dependencies — small enough to read in one sitting.
+
+## Documentation
+
+- **[THREAT_MODEL.md](THREAT_MODEL.md)** — adversaries, assets, trust boundary, and what we do and do not defend.
+- **[REQUIREMENTS.md](REQUIREMENTS.md)** — numbered, testable requirements, each traced to a threat and a test.
+- **[TEST_PLAN.md](TEST_PLAN.md)** — testing methodology: how we prove the requirements hold.
+- **[SECURITY.md](SECURITY.md)** — how to report a vulnerability, and our disclosure commitment.
+- **[docs/decisions.md](docs/decisions.md)** — the decision record: what we chose, why, and what we rejected.
+- **[docs/x402-protocol-notes.md](docs/x402-protocol-notes.md)** — the x402 protocol facts a guard depends on, verified against source.
+- **[docs/prior-art.md](docs/prior-art.md)** — existing x402 guards, read at the source level, credited and compared.
+
+## Authorship
+
+This project is built by a human and an AI working together — Kevin Brown, with Claude. We say so plainly because you are being asked to trust a security tool, and you should know how it was made.
+
+The security-critical core is deliberately small — a pure function, zero runtime dependencies — **specifically so that a human can read all of it.** That is the point of the size limit, not a coincidence of it. Every claim this project makes about the x402 protocol was verified against the protocol's source rather than from an AI's recollection; we found, more than once, that the recollection was wrong. The reasoning behind every design decision is written down in [docs/decisions.md](docs/decisions.md) so you can check the argument, not just the conclusion.
+
+Read the code. That has always been the deal with a guard.
+
+## Status
+
+Pre-alpha. Core policy engine + tests only. The core is being brought into line with the threat model (see REQUIREMENTS.md); payment-interception adapters for the x402 client SDKs are a later slice.
+
+```bash
+npm install
+npm test
+```
+
+## License
+
+MIT (open-core: the guard is and stays free/open; a hosted version + dashboard may come later).
