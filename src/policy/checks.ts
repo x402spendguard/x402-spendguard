@@ -96,10 +96,14 @@ export function runChecks(
   return allow();
 }
 
-/** Lowercased host of a URL, or null if it can't be determined. Deterministic, no I/O. */
+/**
+ * Canonical origin of a URL: lowercased hostname, no port, no trailing dot — the same
+ * form the adapter must derive `origin` in, so the two compare cleanly (a port mismatch
+ * must not false-deny). Deterministic, no I/O. Returns null if it can't be determined.
+ */
 function originOf(url: string): string | null {
   try {
-    return new URL(url).host.toLowerCase();
+    return new URL(url).hostname.toLowerCase().replace(/\.$/, "");
   } catch {
     return null;
   }

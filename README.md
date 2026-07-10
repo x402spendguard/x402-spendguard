@@ -43,10 +43,11 @@ v1 does **not** do: replay/nonce protection, `upto`, non-EVM chains, or enforcem
 
 This guard **screens the signature**, not just the offer: it interposes where the payment authorization is built, so it sees the actual struct before it is signed. That is what lets it enforce the signature-integrity checks above — checks an offer-screening guard structurally cannot make. (See [docs/prior-art.md](docs/prior-art.md) for how this relates to other tools; they are complementary, not competing.)
 
-Two limits we hold ourselves to, stated up front:
+Three limits we hold ourselves to, stated up front:
 
 1. **It is not more enforceable than any in-process guard.** An agent whose code an attacker controls calls the signer directly and bypasses it. The guard gives you *visibility into what is about to be signed*, not *authority over whether it is signed*. It stops an honest agent that has been lied to — prompt injection, a compromised tool, a runaway loop — not an agent whose code is owned. Raising that ceiling (a key-holding local daemon; on-chain delegation) is the roadmap, not v1.
-2. **Durable, crash-safe spend accounting is a claim of intent until its tests pass.** Hold us to it — see [REQUIREMENTS.md](REQUIREMENTS.md) (ACCT-01/02/03, CLOCK-01).
+2. **Spend accounting is serialized within one process, not yet across processes.** The bundled file store has no cross-process lock, so **two processes sharing one wallet's ledger can under-count and silently bypass a cap.** Until that's closed (tracked as ACCT-05), **run one guard instance per wallet.** This is the one place our "state the surprising limit up front" discipline had a blind spot; an external review caught it, and now it's here.
+3. **Write-ahead accounting over-counts on downstream failure.** Spend is recorded before the payment settles (so a crash never under-counts) — but a payment the facilitator later rejects still consumes budget until a settlement-reconciliation path exists (v2). A run of failed payments can walk you into your cap early.
 
 ## Design principles
 

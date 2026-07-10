@@ -135,7 +135,12 @@ export function parseChallenge(raw: Record<string, unknown>): Result<Challenge> 
  * HERE (SCOPE-01): the tagged union IS the EVM-only gate.
  */
 export function parseAuthorization(raw: Record<string, unknown>): Result<Authorization> {
-  const form = raw?.form ?? "eip3009-evm"; // default form for EVM inputs
+  // ADAPTER CONTRACT: the adapter must tag `form` explicitly. We default a MISSING tag to
+  // eip3009-evm for EVM inputs, but a present-and-unrecognized form (e.g. "svm-tx") denies
+  // with the clean `chain.unsupported` reason. (An untagged Solana payload still fails
+  // closed — its non-0x addresses reject at makeAddress — just with a less specific reason;
+  // tagging form removes that ambiguity. See OBS-01.)
+  const form = raw?.form ?? "eip3009-evm";
   if (form !== "eip3009-evm") {
     return err("chain.unsupported", `Authorization form "${String(form)}" is not supported in v1 (EVM only).`);
   }

@@ -85,11 +85,19 @@ All caps are denominated per **(asset, chain)** and compared in integer smallest
 | ID | Requirement | Threat | Test |
 |----|-------------|--------|------|
 | **ACCT-01** | Spend is recorded **write-ahead**, before the payment is released; a crash between record and settlement must never *under-count*. | T10 | `crash-between-record-and-settle-does-not-undercount` |
-| **ACCT-02** | Evaluation is serialized / single-writer: two concurrent payments cannot both pass a cap they jointly exceed (no check-then-act race). | T9 | `concurrent-payments-cannot-both-pass` |
+| **ACCT-02** | **Within a single guard instance/process,** evaluation is serialized (single-writer): two concurrent `authorize()` calls cannot both pass a cap they jointly exceed. | T9 | `concurrent-payments-cannot-both-pass` |
 | **ACCT-03** | Spend state is durable across a process restart. | T3, T4 | `state-survives-restart` |
 | **CLOCK-01** | A clock anomaly must never increase available budget or extend a capability: a backward jump must not reset a spend window; a forward jump must not manufacture fresh budget. Clock weirdness fails toward **deny**. | T9 | `clock-anomaly-fails-closed` |
 
 > Durable, single-writer, crash-safe spend accounting is, to our knowledge, **unsolved in the existing tools we read** (both keep spend in per-process memory). It is genuinely open ground and one of the harder parts of v1.
+
+> **KNOWN LIMITATION — cross-process (flagged by external review, 2026-07-10).** ACCT-02's single-writer guarantee holds *within one process*. The bundled `FileSpendStore` uses atomic writes but **no cross-process lock**, so two processes sharing one ledger file (e.g. two agent workers, one wallet) can both load pre-spend state, both pass a cap, and both write last-write-wins — which **under-counts and silently bypasses the cap**, in the money-losing direction. Until this is closed, **run one guard instance per wallet.** The real fix (an OS/advisory-locked or compare-and-swap store providing cross-process single-writer) is tracked as **ACCT-05** below; its build-vs-defer timing is an open decision.
+
+| ID | Requirement | Threat | Test |
+|----|-------------|--------|------|
+| **ACCT-05** | A spend store shared across processes is serialized (cross-process single-writer): two processes cannot both pass a cap they jointly exceed. | T9 | `cross-process-cannot-both-pass` |
+
+> ACCT-05 is **not yet met** — it is an honest open requirement, not a shipped guarantee (see `test/deferred.test.ts`). It exists so the limitation cannot hide.
 
 ## Privacy and egress
 

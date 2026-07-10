@@ -141,6 +141,25 @@ describe("purity", () => {
   });
 });
 
+describe("cross-origin check (requireOriginMatch)", () => {
+  it("allows when the challenge resource origin matches the request origin", () => {
+    // origin "weather.example" vs resource "https://weather.example/forecast" (default) -> match
+    const d = decide(ev(), policy({ requireOriginMatch: true }));
+    expect(d.verdict).toBe("allow");
+  });
+
+  it("ignores a port difference (canonical origin is host-only)", () => {
+    // A port on the resource URL must not false-deny against a bare-host origin.
+    const d = decide(ev({ resource: "https://weather.example:8443/forecast" }), policy({ requireOriginMatch: true }));
+    expect(d.verdict).toBe("allow");
+  });
+
+  it("denies when the challenge resource origin differs from the request origin", () => {
+    const d = decide(ev({ resource: "https://attacker.example/forecast" }), policy({ requireOriginMatch: true }));
+    expect(d.reason).toBe("origin.mismatch");
+  });
+});
+
 describe("v2 seam — nonce", () => {
   it("nonce-unread-in-v1", () => {
     // Changing ONLY the nonce must not change the decision: v1 never reads it.
