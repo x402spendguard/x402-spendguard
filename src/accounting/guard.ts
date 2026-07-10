@@ -31,9 +31,21 @@ export interface SpendStore {
   save(state: SpendState): Promise<void>;
 }
 
+/**
+ * A null-prototype string map. Spend is keyed by attacker-influenceable strings (the origin),
+ * so keys like "__proto__"/"constructor" must be ordinary keys, never touch Object.prototype.
+ * A plain `{}` would let origin "__proto__" read the prototype (always 0) and write to it
+ * (never persists) — a silent per-domain cap bypass. Building maps this way closes that.
+ */
+export function nullMap<T>(src?: Record<string, T>): Record<string, T> {
+  const m = Object.create(null) as Record<string, T>;
+  if (src) for (const k of Object.keys(src)) m[k] = src[k];
+  return m;
+}
+
 /** A fresh, empty spend state anchored at `now`. */
 export function emptyState(now: UnixSeconds): SpendState {
-  return { spentByDomain: {}, spentByAsset: {}, windowStart: now, lastSeen: now };
+  return { spentByDomain: nullMap(), spentByAsset: nullMap(), windowStart: now, lastSeen: now };
 }
 
 /** A tiny async mutex — serializes work with no runtime dependency (DEP-01). */
@@ -62,7 +74,7 @@ export function applyWindow(state: SpendState, now: UnixSeconds, windowSeconds: 
     const elapsed = effective - state.windowStart;
     const windowsPassed = elapsed / windowSeconds; // bigint floor
     const newStart = (state.windowStart + windowsPassed * windowSeconds) as UnixSeconds;
-    return { spentByDomain: {}, spentByAsset: {}, windowStart: newStart, lastSeen: effective };
+    return { spentByDomain: nullMap(), spentByAsset: nullMap(), windowStart: newStart, lastSeen: effective };
   }
   return { ...state, lastSeen: effective };
 }
@@ -71,11 +83,11 @@ export function applyWindow(state: SpendState, now: UnixSeconds, windowSeconds: 
 export function recordSpend(state: SpendState, ev: PaymentEvaluation): SpendState {
   const a = ev.authorization;
   const key = assetKey({ chain: a.chainId, token: a.verifyingContract });
-  const byDomain = { ...state.spentByDomain };
-  const row = { ...(byDomain[ev.origin] ?? {}) };
+  const byDomain = nullMap(state.spentByDomain);
+  const row = nullMap(byDomain[ev.origin] as Record<string, bigint> | undefined);
   row[key] = (row[key] ?? 0n) + a.value;
   byDomain[ev.origin] = row;
-  const byAsset = { ...state.spentByAsset };
+  const byAsset = nullMap(state.spentByAsset);
   byAsset[key] = (byAsset[key] ?? 0n) + a.value;
   return { ...state, spentByDomain: byDomain, spentByAsset: byAsset };
 }
@@ -98,10 +110,20 @@ export class SpendGuard {
   /** Decide on a payment and, if allowed, durably record the spend before returning. */
   authorize(ev: PaymentEvaluation): Promise<PolicyDecision> {
     return this.mutex.run(async () => {
-      const raw = this.clock.now();
-      const loaded = await this.store.load();
-      const state = applyWindow(loaded, raw, this.policy.windowSeconds);
-      const now = state.lastSeen; // the monotonic, effective clock
+      // Load + window advance are I/O and parsing at the edge — a corrupt or unreadable
+      // ledger must DENY, not throw out of authorize(). Fail-closed extends to the accounting
+      // layer; the guard never depends on the caller wrapping this call.
+      let state: SpendState;
+      let now: UnixSeconds;
+      try {
+        const raw = this.clock.now();
+        const loaded = await this.store.load();
+        state = applyWindow(loaded, raw, this.policy.windowSeconds);
+        now = state.lastSeen; // the monotonic, effective clock
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "unknown error";
+        return deny("state.load_failed", `Could not load spend state; denying by default: ${msg}`);
+      }
 
       const decision = evaluate(ev, this.policy, state, now);
 

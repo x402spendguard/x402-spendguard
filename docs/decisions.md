@@ -207,3 +207,26 @@ We follow **parse, don't validate**: untrusted input is converted into a trustwo
 **Open.** The real fix — an OS/advisory-locked store, or compare-and-swap on load (re-read at save; conflict ⇒ fail-closed deny) — is dependency-free but a real slice. **Timing is Kevin's call:** before the adapter ships (Opus's lean, since multi-worker is a deployment a user would pick), or a documented v1 limitation with the fix as v1.x. Not decided.
 **Also (finding 4):** write-ahead over-counts on downstream settlement failure (safe direction, but a run of failed payments reaches the cap early). Recorded as an explicit **v2** item: settlement-confirmation → reconcile. Not a bug; a named roadmap decision.
 **Process note.** This is the second real bug an *actual code read* caught that a *design/docs read* missed (after the empty-allowlist hole). Grok's two "code reviews" never fetched `src/` and found neither. Code-level adversarial review remains owed; the fix here came from the reliability lens, not the adversarial one.
+
+### D-022 — Adversarial code review: five landed attacks fixed
+**2026-07-10 · Accepted**
+
+**Context.** An adversarial review (Opus) ran seven concrete attacks against the *compiled* code; five broke something. The money-decision path (parse → bind → allowlist → caps) held — binding is exact bigint/lowercased-string comparison with no coercion seam, belt-and-braces holds, fail-closed denies fire. Every finding lived in the edge/accounting layer or in a requirement that over-promised.
+
+**Fixed now (all confirmed, all unsafe-direction):**
+- **H2 — `__proto__` origin bypassed the per-domain cap, and `makeDomain` didn't canonicalize.** Origin `"__proto__"` read `Object.prototype` (always 0) and wrote to the prototype (never persisted), silently voiding the per-domain cap; and `"shop.example"` / `":443"` / trailing-dot / URL forms keyed different budget buckets. Fixed: `makeDomain` canonicalizes to the bare lowercased hostname; spend maps are **null-prototype** (`Object.create(null)`) and reads use `Object.hasOwn` (belt-and-braces). *(My earlier `originOf` fix touched only the optional check, not the budget-bucket key — this fixes the real one.)*
+- **H3 — a corrupt/unreadable ledger threw out of `authorize()` instead of denying.** FAIL-01 wrapped only `evaluate`, not `store.load()`. Fixed: load + window advance are wrapped; failure ⇒ `deny("state.load_failed")`. Fail-closed now extends to the accounting layer.
+- **M1 — BIND-03 was defeatable by a malicious server.** The lifetime bound used the challenge's `maxTimeoutSeconds`, which is *server-controlled* — set it huge, the bound is toothless (a **remote** attack; malicious servers are A2, in scope). Fixed: new policy field `maxAuthLifetimeSeconds`; the effective bound is `min(server claim, policy max)`. The server can only shorten the window.
+- **M2 — CLOCK-01 over-promised.** It claimed "a forward jump must not manufacture fresh budget," but the code resets on any forward elapse ≥ window; only the backward guard is real, and the one test covered only the backward half. Fixed as **honesty**: CLOCK-01 reworded to the backward-only guarantee it delivers; forward-jump-under-host-clock scoped explicitly to A5 and pinned by a characterization test. A requirement that claims more than the code delivers is exactly what this project's credibility rests on not doing.
+- **L1 — no `fsync` before rename** (power-loss could truncate the ledger, feeding H3). Fixed: `openSync`+`fsyncSync`+rename, and a **unique** temp name (`.tmp.<pid>.<uuid>`) so concurrent writers can't clobber the same temp.
+
+**Deferred, recorded (not silently dropped):**
+- **H1 (full cross-process lock)** — still ACCT-05/D-021, Kevin's timing call. The unique temp name is a partial mitigation, not the fix.
+- **M3 — budget-exhaustion DoS**: write-ahead + no reconciliation means repeated allowed-but-failing payments (via the in-scope injection vector) can exhaust *budget* (not funds) until the window resets. Availability tradeoff; real fix is settlement reconciliation (**v2**).
+- **L2 — no integrity/permission check on the ledger file** (asymmetry with CONF-01's `policy.yaml` check). Mirror the world-writable check on the store, or document ledger integrity == filesystem permissions. **v1.x.**
+- **L3 — `makeOpaqueHex` accepts zero-length `0x`.** Harmless in v1 (nonce is carried-unread per D-019); **v2** replay logic must validate the 32-byte length, not assume it from parse success.
+- **L4 — brands are compile-time only.** The trust model rests on the adapter routing *all* untrusted input through the parsers and never casting — a load-bearing invariant for the adapter slice, ideally with a runtime assertion at the composition root.
+
+**Tested-and-safe (confirmed by the review):** prototype pollution via a poisoned ledger *value* was inert; binding has no coercion bypass; `assetKey`'s `|` can't be injected; amount/time parsers reject floats/signs/`0x`/whitespace; the `user@host` URL trick resolves to the real host; kill switch, empty-allowlist-deny, CAP-05, engine-throw→deny all hold.
+
+**Process note.** This is what a real code-level adversarial review buys that a design review cannot: three of these (H2, H3, M1) are exploitable and none is visible from the docs. The core policy engine is sound; the edge is where the money leaks.

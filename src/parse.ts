@@ -77,12 +77,26 @@ export function makeChainId(raw: unknown): Result<ChainId> {
   return ok(`${ns.toLowerCase()}:${ref}` as ChainId);
 }
 
-/** Canonical budget domain from the client-observed request origin (host, lowercased). */
+/**
+ * Canonical budget domain from the client-observed request origin. Accepts a bare host or a
+ * full URL and reduces both to the lowercased hostname — no scheme, port, path, or trailing
+ * dot — so "shop.example", "shop.example:443", "shop.example.", and "https://shop.example/x"
+ * all key the SAME budget bucket. Without this, per-domain spend splits across representations
+ * and the per-domain cap is only backstopped by the global cap.
+ */
 export function makeDomain(raw: unknown): Result<Domain> {
-  if (typeof raw !== "string" || raw.length === 0) {
+  if (typeof raw !== "string" || raw.trim().length === 0) {
     return err("parse.domain_malformed", `Domain "${String(raw)}" is empty.`);
   }
-  return ok(raw.trim().toLowerCase() as Domain);
+  const s = raw.trim();
+  let host: string;
+  try {
+    host = new URL(s.includes("://") ? s : `x://${s}`).hostname.toLowerCase().replace(/\.$/, "");
+  } catch {
+    return err("parse.domain_malformed", `Domain "${String(raw)}" is not a valid host.`);
+  }
+  if (host.length === 0) return err("parse.domain_malformed", `Domain "${String(raw)}" has no host.`);
+  return ok(host as Domain);
 }
 
 /** Opaque hex (e.g. the nonce). Shape-checked only; never interpreted in v1. */

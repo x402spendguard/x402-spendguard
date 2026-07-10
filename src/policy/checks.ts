@@ -42,12 +42,16 @@ export function runChecks(
       `Signed (${a.chainId}, ${a.verifyingContract}) != challenge (${c.network}, ${c.asset}).`,
     );
   }
-  // Bound the bearer-capability lifetime by the challenge's own declared timeout.
-  // Nothing downstream enforces this; the guard does. Skew tolerance is user policy.
-  if (a.validBefore > now + c.maxTimeoutSeconds + policy.clockSkewSeconds) {
+  // Bound the bearer-capability lifetime. The challenge's `maxTimeoutSeconds` is SERVER-
+  // controlled and untrusted — a malicious server sets it enormous — so it cannot be the
+  // security bound. The effective ceiling is min(server's claim, the user's policy max):
+  // the server can only make the window SHORTER than policy, never longer.
+  const effectiveMax =
+    c.maxTimeoutSeconds < policy.maxAuthLifetimeSeconds ? c.maxTimeoutSeconds : policy.maxAuthLifetimeSeconds;
+  if (a.validBefore > now + effectiveMax + policy.clockSkewSeconds) {
     return deny(
       "bind.timeout_exceeded",
-      `validBefore ${a.validBefore} exceeds now+maxTimeoutSeconds+skew.`,
+      `validBefore ${a.validBefore} exceeds now + min(maxTimeoutSeconds, policy max) + skew.`,
     );
   }
 
@@ -78,7 +82,10 @@ export function runChecks(
   if (a.value > caps.perRequest) {
     return deny("cap.per_request", `Amount ${a.value} exceeds per-request cap ${caps.perRequest}.`);
   }
-  const domainSpent = state.spentByDomain[origin]?.[key] ?? 0n;
+  // Proto-safe read: hasOwn so an origin like "__proto__" cannot resolve to an inherited
+  // prototype value (belt-and-braces with the null-prototype maps the store builds).
+  const domainRow = Object.hasOwn(state.spentByDomain, origin) ? state.spentByDomain[origin] : undefined;
+  const domainSpent = domainRow && Object.hasOwn(domainRow, key) ? domainRow[key] : 0n;
   if (domainSpent + a.value > caps.perDomain) {
     return deny(
       "cap.per_domain",

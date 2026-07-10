@@ -42,7 +42,7 @@ The guard compares the challenge it received against the authorization about to 
 |----|-------------|--------|------|
 | **BIND-01** | For scheme `exact`: **deny** unless the signed `value` equals the challenge `amount` exactly (rejects both over- and under-payment; note v1 facilitators accept `value ≥ amount`). | T2, T5 | `bind-rejects-overpayment` |
 | **BIND-02** | **Deny** unless the signed `to` equals the challenge `payTo` (after canonicalization). | T1 | `bind-rejects-recipient-swap` |
-| **BIND-03** | **Deny** unless `validBefore ≤ now + maxTimeoutSeconds + skew`. (Facilitators do not enforce this bound; the guard does.) | T6 | `bind-rejects-long-lived-auth` |
+| **BIND-03** | **Deny** unless `validBefore ≤ now + min(server maxTimeoutSeconds, policy maxAuthLifetimeSeconds) + skew`. The challenge's `maxTimeoutSeconds` is *server-controlled and untrusted* (a malicious server sets it huge), so the **policy-authored** `maxAuthLifetimeSeconds` is the real ceiling — the server can only shorten the window, never extend it. | T6 | `bind-rejects-long-lived-auth` |
 | **BIND-04** | **Deny** unless the signed asset (`verifyingContract`) and `chainId` match the challenge's declared asset and network. | T7 | `bind-rejects-asset-mismatch` |
 | **BIND-05** | A non-`exact` scheme (e.g. `upto`, `auth-capture`) is **denied** with a stable reason. (`upto` is deferred to v2; see note.) | T2 | `nonexact-scheme-denied` |
 | **SCOPE-01** | A payment whose authorization form is not `eip3009-evm` (e.g. Solana/SVM) is **denied at parse** with a stable reason. v1 is EVM-only (D-017). | T2 | `nonevm-form-denied` |
@@ -87,7 +87,9 @@ All caps are denominated per **(asset, chain)** and compared in integer smallest
 | **ACCT-01** | Spend is recorded **write-ahead**, before the payment is released; a crash between record and settlement must never *under-count*. | T10 | `crash-between-record-and-settle-does-not-undercount` |
 | **ACCT-02** | **Within a single guard instance/process,** evaluation is serialized (single-writer): two concurrent `authorize()` calls cannot both pass a cap they jointly exceed. | T9 | `concurrent-payments-cannot-both-pass` |
 | **ACCT-03** | Spend state is durable across a process restart. | T3, T4 | `state-survives-restart` |
-| **CLOCK-01** | A clock anomaly must never increase available budget or extend a capability: a backward jump must not reset a spend window; a forward jump must not manufacture fresh budget. Clock weirdness fails toward **deny**. | T9 | `clock-anomaly-fails-closed` |
+| **CLOCK-01** | A **backward** clock jump must never reset a spend window or un-count spend — time is viewed monotonically (`max(now, lastSeen)`). | T9 | `clock-anomaly-fails-closed` |
+
+> **CLOCK-01 scope (corrected for honesty, 2026-07-10).** This requirement guarantees only the **backward** direction, which a pure function *can* deliver. It does **not** claim to stop a **forward** wall-clock jump: an attacker with host control over the clock (A5) can fast-forward past a window boundary and force an early rollover = fresh budget. A pure function cannot distinguish that from legitimate time passage without a trusted time source, so it is **out of scope (A5)** and characterized by the test `forward-jump-manufactures-budget`. The earlier wording ("a forward jump must not manufacture fresh budget") over-claimed relative to the code; an external review caught it, and the claim now matches reality.
 
 > Durable, single-writer, crash-safe spend accounting is, to our knowledge, **unsolved in the existing tools we read** (both keep spend in per-process memory). It is genuinely open ground and one of the harder parts of v1.
 

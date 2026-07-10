@@ -116,6 +116,10 @@ export interface Policy {
   caps: Record<AssetKey, Caps>;
   /** Clock-skew tolerance for the validBefore bound. Policy, not a code constant (D-018). */
   clockSkewSeconds: UnixSeconds;
+  /** Absolute max authorization lifetime the USER will accept, enforced independently of the
+   *  server's `maxTimeoutSeconds` (which is untrusted — a malicious server can set it huge).
+   *  The effective bound is min(server maxTimeoutSeconds, this). Policy, not a code constant. */
+  maxAuthLifetimeSeconds: UnixSeconds;
   /** Rolling budget window length, e.g. 86400 for a daily budget. The accounting layer
    *  zeroes cumulative spend when a window elapses. Policy, not a code constant. */
   windowSeconds: UnixSeconds;

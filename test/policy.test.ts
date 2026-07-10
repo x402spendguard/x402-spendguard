@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { evaluate } from "../src/policy/engine.js";
+import { recordSpend, emptyState } from "../src/accounting/guard.js";
 import { assetKey } from "../src/parse.js";
-import type { Address, ChainId, OpaqueHex, PaymentEvaluation, Policy } from "../src/types.js";
-import { A, T, key, CHAIN, USDC, PAYEE, ATTACKER, ORIGIN, NOW, caps, policy, freshState, state, ev } from "./helpers.js";
+import type { Address, ChainId, Domain, OpaqueHex, PaymentEvaluation, Policy } from "../src/types.js";
+import { A, T, key, CHAIN, USDC, PAYEE, ATTACKER, ORIGIN, NOW, caps, policy, freshState, state, challenge, authorization, ev } from "./helpers.js";
 
 // Tests build already-parsed (trustworthy) values via the shared helpers; the
 // parse boundary itself is covered in parse.test.ts.
@@ -69,6 +70,35 @@ describe("signature-integrity binding", () => {
     const otherToken = "0xffffffffffffffffffffffffffffffffffffffff" as Address;
     const d = decide(ev({ asset: USDC }, { verifyingContract: otherToken }));
     expect(d.reason).toBe("bind.asset_mismatch");
+  });
+
+  it("lifetime is capped by policy, not by the server's maxTimeoutSeconds (M1)", () => {
+    // A malicious server claims an enormous maxTimeoutSeconds; policy max is 3600s.
+    const huge = T(10n ** 30n);
+    // validBefore past the policy cap → denied, despite the server's huge claim.
+    const over = decide(ev({ maxTimeoutSeconds: huge }, { validBefore: T(NOW + 3_700n) }));
+    expect(over.reason).toBe("bind.timeout_exceeded");
+    // validBefore within the policy cap → allowed (the server can only shorten, never extend).
+    const under = decide(ev({ maxTimeoutSeconds: huge }, { validBefore: T(NOW + 1_000n) }));
+    expect(under.verdict).toBe("allow");
+  });
+});
+
+describe("prototype-key safety (H2)", () => {
+  it("an origin of \"__proto__\" does not bypass the per-domain cap", () => {
+    const proto = "__proto__" as Domain;
+    const p = policy({ caps: caps({ perDomain: A(1_000_000n) }) });
+    const pe: PaymentEvaluation = {
+      origin: proto,
+      challenge: challenge({ amount: A(600_000n) }),
+      authorization: authorization({ value: A(600_000n) }),
+    };
+    // Record two 0.6 payments under the "__proto__" origin, then a third must be denied.
+    let s = emptyState(NOW);
+    s = recordSpend(s, pe); // 0.6
+    s = recordSpend(s, pe); // 1.2 (persists as an OWN key, not the prototype)
+    const d = evaluate(pe, p, s, NOW);
+    expect(d.reason).toBe("cap.per_domain"); // 1.2 already recorded, 3rd would exceed 1.0
   });
 });
 

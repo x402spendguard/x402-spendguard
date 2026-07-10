@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SpendGuard, emptyState, applyWindow } from "../src/accounting/guard.js";
@@ -111,6 +111,38 @@ describe("clock anomaly fails closed (CLOCK-01)", () => {
     // A genuine forward elapse of a full window DOES reset (legitimate daily rollover).
     const fwd = applyWindow(s, (START + 2_000n) as UnixSeconds, T(1_000n));
     expect(fwd.spentByAsset[key]).toBeUndefined(); // reset
+  });
+});
+
+describe("corrupt ledger fails closed (H3)", () => {
+  const path = join(tmpdir(), "x402-spendguard-corrupt-test.json");
+  beforeEach(() => rmSync(path, { force: true }));
+  afterEach(() => rmSync(path, { force: true }));
+
+  it("corrupt-ledger-denies", async () => {
+    writeFileSync(path, "{ this is not valid json", "utf8");
+    const guard = new SpendGuard(new FileSpendStore(path, START), new FakeClock(START), capPolicy);
+    const d = await guard.authorize(pay6);
+    expect(d.verdict).toBe("deny"); // must DENY, not throw out of authorize()
+    expect(d.reason).toBe("state.load_failed");
+  });
+});
+
+describe("forward clock jump rolls the window (M2 — documented A5 limitation)", () => {
+  // CLOCK-01 honestly guarantees only the BACKWARD/monotonic direction. A forward wall-clock
+  // jump under host control (A5, out of scope) can force an early rollover = fresh budget.
+  // A pure function cannot distinguish that from a legitimate window passage without a trusted
+  // time source. This test PINS that behavior so the claim matches the code.
+  it("forward-jump-manufactures-budget (known, out of scope)", async () => {
+    const store = new MemStore(emptyState(START));
+    const clock = new FakeClock(START);
+    const payAt = (t: bigint) => ev({ amount: A(600_000n) }, { value: A(600_000n), validBefore: (t + 100n) as UnixSeconds });
+    const guard = new SpendGuard(store, clock, capPolicy); // windowSeconds 86400, cap 1.0
+
+    expect((await guard.authorize(payAt(START))).verdict).toBe("allow"); // 0.6
+    expect((await guard.authorize(payAt(START))).reason).toBe("cap.per_domain"); // 1.2 > 1.0, denied
+    clock.t = (START + 86_401n) as UnixSeconds; // jump a full window forward
+    expect((await guard.authorize(payAt(clock.t))).verdict).toBe("allow"); // budget rolled over
   });
 });
 

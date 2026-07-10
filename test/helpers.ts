@@ -36,6 +36,7 @@ export const policy = (over: Partial<Policy> = {}): Policy => ({
   allowlist: [{ address: PAYEE, chain: CHAIN }],
   caps: caps(),
   clockSkewSeconds: T(60n),
+  maxAuthLifetimeSeconds: T(3_600n),
   windowSeconds: T(86_400n),
   requireOriginMatch: false,
   ...over,

@@ -1,5 +1,21 @@
 import { describe, it, expect } from "vitest";
-import { makeAmount, parseChallenge, parseAuthorization } from "../src/parse.js";
+import { makeAmount, makeDomain, parseChallenge, parseAuthorization } from "../src/parse.js";
+
+describe("domain canonicalization (H2)", () => {
+  it("collapses host representations to one budget bucket", () => {
+    const forms = ["shop.example", "shop.example:443", "shop.example.", "https://shop.example/x", "HTTPS://Shop.Example/y"];
+    const hosts = forms.map((f) => {
+      const r = makeDomain(f);
+      return r.ok ? r.value : "PARSE_ERR";
+    });
+    expect(new Set(hosts)).toEqual(new Set(["shop.example"])); // all identical
+  });
+
+  it("rejects an empty or whitespace domain", () => {
+    expect(makeDomain("").ok).toBe(false);
+    expect(makeDomain("   ").ok).toBe(false);
+  });
+});
 
 describe("money parsing (MONEY-01)", () => {
   it("money-rejects-malformed", () => {
