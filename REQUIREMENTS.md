@@ -45,6 +45,7 @@ The guard compares the challenge it received against the authorization about to 
 | **BIND-03** | **Deny** unless `validBefore ≤ now + maxTimeoutSeconds + skew`. (Facilitators do not enforce this bound; the guard does.) | T6 | `bind-rejects-long-lived-auth` |
 | **BIND-04** | **Deny** unless the signed asset (`verifyingContract`) and `chainId` match the challenge's declared asset and network. | T7 | `bind-rejects-asset-mismatch` |
 | **BIND-05** | A non-`exact` scheme (e.g. `upto`, `auth-capture`) is **denied** with a stable reason. (`upto` is deferred to v2; see note.) | T2 | `nonexact-scheme-denied` |
+| **SCOPE-01** | A payment whose authorization form is not `eip3009-evm` (e.g. Solana/SVM) is **denied at parse** with a stable reason. v1 is EVM-only (D-017). | T2 | `nonevm-form-denied` |
 
 > **v2 note (`upto`).** `upto` signs a *maximum*; the resource server sets the actual charge (0 → max) after consumption, and the client cannot constrain it below the max. When v2 adds `upto`, the rule is: cap against the signed maximum, bind `to == payTo`, bound the deadline, and **disclose to the user that the server may charge up to the maximum.**
 
@@ -58,6 +59,9 @@ All caps are denominated per **(asset, chain)** and compared in integer smallest
 | **CAP-02** | Per-domain cumulative: if `domainSpent + amount > perDomainCap`, **deny**. | T3 | `cap-per-domain` |
 | **CAP-03** | Global cumulative: if `globalSpent + amount > globalCap`, **deny**. | T4 | `cap-global` |
 | **CAP-04** | Amounts of differing `(asset, chain)` are **never** summed into one cap. | T7 | `cap-no-cross-asset-sum` |
+| **CAP-05** | A payment in an `(asset, chain)` with **no configured cap** is **denied** (missing cap = deny, fail-closed). | T2, T7 | `cap-asset-unconfigured` |
+
+> **Per-denomination global.** There is no cross-asset "global dollar" cap. Summing USDC and another token into one ceiling would need a price oracle — which means network egress (violates PRIV-01) and the guard forming an opinion about value (violates the mechanism-not-policy razor). So the `global` cap is **per `(asset, chain)` denomination** (e.g. a USDC-on-Base budget), stated loudly because it surprises users who expect a dollar ceiling.
 
 ## Money representation
 
@@ -71,6 +75,7 @@ All caps are denominated per **(asset, chain)** and compared in integer smallest
 |----|-------------|--------|------|
 | **FAIL-01** | Any thrown exception on the enforcement path results in **deny**. | T8 | `throwing-check-denies` |
 | **FAIL-02** | A missing or malformed field in the challenge or payment results in **deny** — never a skipped check. | T8 | `malformed-challenge-denies` |
+| **PARSE-01** | Malformed input is denied with a **specific parse reason code** (e.g. `parse.amount_negative`, `scheme.unsupported`), never the generic `engine.error` backstop. Malformed input is *expected*, not a bug. | T8 | `parse-failure-specific-reason` |
 | **FAIL-03** | An audit/log write failure does **not** flip an allow to a deny or a deny to an allow; but a failure to durably record a *spend* before the payment is released results in **deny** (see ACCT-01). | T8, T10 | `audit-failure-preserves-decision`, `spend-record-failure-denies` |
 
 > The FAIL-03 split — *enforcement failures must deny; audit failures must not* — is deliberate. "A decision the guard already made must not be undone by a record of it." (Pattern adopted from presidio-hardened-x402; see [prior-art.md](docs/prior-art.md).)
@@ -98,7 +103,7 @@ All caps are denominated per **(asset, chain)** and compared in integer smallest
 
 | ID | Requirement | Threat | Test |
 |----|-------------|--------|------|
-| **DOM-01** | The domain a budget is keyed on is derived by a stated canonical rule from the challenge, not from an attacker-controllable redirect target. | T14 | `domain-derivation-ignores-redirect` |
+| **DOM-01** | The domain a budget is keyed on comes from the **client-observed request origin** (the origin that actually received the 402, after redirects), **never** from a server-controlled challenge field such as `resource`. | T14 | `domain-derivation-ignores-redirect` |
 
 ## Configuration integrity
 
@@ -125,6 +130,14 @@ All caps are denominated per **(asset, chain)** and compared in integer smallest
 | **INJ-01** | The clock and the spend-state store are **injected dependencies** at every layer that uses them. No module outside the composition root reads a wall clock or opens a store ambiently. | (enables CLOCK-01, ACCT-01/02/03) | `no-ambient-clock-or-store` |
 
 **CORE-01** (purity) and **PRIV-01** (no egress, statically checked) are testability requirements too: purity is what makes the security-critical logic exhaustively testable without mocks, and a static egress check is what makes "no telemetry" *provable* rather than promised.
+
+## No policy in the guard (D-018)
+
+| ID | Requirement | Threat | Test |
+|----|-------------|--------|------|
+| **POL-01** | The enforcement path contains **no security-deciding literal** — every threshold, list, and tolerance is read from `Policy`. Shipped defaults (clock skew, the cross-origin flag) live in a **readable default policy file**, never as constants in code. | (mechanism-not-policy) | `no-deciding-literals-in-core` |
+
+A reader of the guard's enforcement code should find zero numbers that decide an outcome. This is the code-level form of "policy belongs in userspace": the guard is a pure *interpreter* of policy, and every opinion is visible in one auditable file. Not policy, and correctly in the guard: the binding/integrity checks, fail-closed behavior, and the coordinate system (units, the `(asset, chain)` key, the domain rule).
 
 Without INJ-01, CLOCK-01 and the accounting requirements are **unfalsifiable** — an accounting module that read the wall clock ambiently would satisfy every other requirement in this document while being untestable. This requirement exists because testability, decided late, is the most expensive bolt-on of all: it is not a property you can add to code, only one you can design into it.
 

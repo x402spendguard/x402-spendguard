@@ -127,3 +127,74 @@ Format: context → decision → consequences → alternatives rejected. Decisio
 **Decision.** Version control immediately; publish to GitHub when a stranger reading the documents and then the code finds them consistent: the core matches the model, and the tests named in `REQUIREMENTS.md` exist and either pass or visibly fail with a stated reason.
 **Consequences.** The same words in `prior-art.md` read as *practitioner who read the source* beside a working guard, and as *criticism from someone who hasn't built anything* beside a stub. Coherence, not completeness, is the gate.
 **Rejected.** Publishing immediately to build in the open. Reviewers can read the documents without a public repo; the standing of the critique cannot be recovered later.
+
+### D-016 — Development discipline
+**2026-07-10 · Accepted**
+
+**Context.** For a security tool, *how* the code is written is part of what a reader is asked to trust. Two failure modes bracket the work: the **band-aid** (patch the symptom, leave the cause) and the **gold-plate** (polish without a stopping rule). Both are avoidable with an explicit loop and explicit definitions.
+
+**Decision — the loop.** Every development stroke follows:
+
+> **audit → think → plan → write the failing test → implement → verify**
+
+with an explicit **return edge from `implement` back to `think`.** Two edges are called out because they are the ones that get skipped:
+- *Test-first is a named step.* We adopted TDD; if "implement" is allowed to swallow the test, we drift to test-after within a week.
+- *Going back is the default, not a defeat.* Band-aids are not a character flaw — they are what happens when you discover mid-implementation that the plan was wrong and patching forward is cheaper than re-planning. Naming the edge makes re-planning the expected move.
+
+**Decision — what a band-aid is** (so the rule is checkable): *a change that makes a symptom disappear without changing the model that produced it.* Concretely: adding a special case so a test passes; catching an exception to suppress it rather than to deny; widening a type to accommodate a value that should have been rejected. This is the code-side twin of the test-side rule in [TEST_PLAN.md](../TEST_PLAN.md): *never weaken a test to go green* ⟹ **never widen the code to accept an input you should reject.**
+
+> *Honest caveat:* this rule is affordable **because we have no users.** No production incident is forcing a hotfix. If that changes, "no band-aids" needs a documented exception path — stop the bleeding, then the real fix, then a permanent regression test — rather than quietly becoming a rule we break.
+
+**Decision — attack surface is a specific set, not every line.** We considered the stricter maxim "every source line is an attack surface" and rejected it as *imprecise in a costly way*: if every line is attack surface, none is, and scrutiny cannot be concentrated where the trust boundary actually sits. Taken literally it also pushes toward validate-everything-at-every-layer, which *increases* line count — and therefore bug count — while blurring where validation belongs.
+
+Two sharper statements replace it, and both are true:
+1. **Every line is a liability.** You own it, maintain it, and a reviewer must read it. The conclusion this drives is *write fewer lines* — which is exactly the point of a core small enough for a human to read in one sitting.
+2. **Attack surface is where untrusted input meets a decision**, and it gets the paranoia: the challenge parser, the payload parser, amount parsing, cap arithmetic, policy loading, and the state-store boundary. Adversarial tests, property tests, and fuzzing concentrate there. Pure comparison logic downstream of a correct parse gets ordinary rigor.
+
+We follow **parse, don't validate**: untrusted input is converted into a trustworthy type *once*, at the boundary; the interior then trusts its own types.
+
+**Decision — the stopping rule (definition of done).** A change is done when: **the requirement's named test passes, the code is as small as it can be while passing, and no test was weakened to get there.** Quality is defined by the threat model and the requirements — not by how much more could theoretically be added.
+
+**Consequences.** "Highest quality possible" is unbounded and is its own failure mode for a deliberately cheap, bounded project; the stopping rule above bounds it. The loop's audit step means we read the current source honestly before each stroke — the same discipline that caught a deprecated SDK API we would otherwise have specified from memory (D-013).
+
+**Rejected.** "Every source line is an attack surface" (too strict; see above). Unbounded "highest quality possible" (no stopping rule). Test-after development (drifts immediately).
+
+### D-017 — v1 is EVM-only (EIP-3009 `exact`); Solana/SVM deferred to v2
+**2026-07-10 · Accepted · ratified explicitly by Kevin, not folded in**
+
+**Context.** x402's `exact` scheme has an EVM variant (EIP-3009 — a legible, field-labeled EIP-712 struct) and a Solana variant (a partially-signed transaction — a different artifact entirely). Every binding check in this project reads the EVM struct's fields; none applies to the Solana form. Our `Authorization` type literally cannot represent an SVM payment.
+**Decision.** v1 evaluates only EIP-3009 `exact` on EVM chains (Ethereum and the EVM family — Base, Polygon, Arbitrum, …). Solana/SVM is **denied at parse with a stable reason** and deferred to v2. This was raised for ratification as a **scope cut, not a refinement**, and accepted out loud — a foundational scope change does not become real by appearing inside a design doc.
+**Consequences.** Base — where most current x402 volume lives — is EVM, so v1 covers today's dominant venue. The trade-off given up: the Base-vs-Solana cross-chain friction the pessimist case named as the interesting problem. Solana in v2 is real work — a genuinely different set of binding checks — not a config flag.
+**Rejected.** Including SVM in v1 (would require the second binding-check set before shipping anything). Letting EVM-only arrive silently as a "type-model consequence" (the drift failure mode we have guarded against for ten turns).
+
+### D-018 — No policy in the guard: no deciding literals in enforcement code
+**2026-07-10 · Accepted**
+
+**Context.** "Policy belongs in userspace." [D-011](#d-011--mechanism-not-policy--no-anomaly-detection) said the guard forms no opinions; this sharpens it from *what* the guard decides to *where the numbers live*.
+**Decision.** The enforcement path contains **no security-deciding literal** — no hardcoded skew, no threshold, no default toggle. Every number, list, and tolerance is read from the user's `Policy`. Shipped defaults (e.g. clock-skew, the cross-origin flag's off state) live in a **readable default policy file**, never as constants in code. A reader of the guard's code should find zero numbers that decide an outcome.
+**Consequences.** New requirement POL-01, testable by a static check. `clockSkewSeconds` and `requireOriginMatch` become policy fields with documented defaults in the shipped file, not code constants.
+**Not policy, and correctly in the guard:** the binding/integrity checks (they make user policy *sound*, not a value judgment), fail-closed behavior ("deny" is the safe mechanism), and the coordinate system (smallest-units, the `(asset, chain)` key, the domain-derivation rule — the *language* policy is written in, not policy itself).
+**Rejected.** "Sensible defaults" as code constants — a hidden opinion is still an opinion.
+
+### D-019 — v2 seams built into v1 (tagged authorization, per-form cap amount, opaque nonce)
+**2026-07-10 · Accepted**
+
+**Context.** v1 is EVM-only, but must not foreclose v2 (Solana, `upto`, replay/nonce, the daemon rung). The rule: build the *seam*, never the *filling*.
+**Decision.**
+1. **`Authorization` is a discriminated union tagged by payment form** (`form: "eip3009-evm"` in v1). The engine dispatches binding checks on the tag; an unrecognized form is denied at parse. This *is* the EVM-only gate (D-017) — the v1 scope boundary and the v2 seam are one mechanism, no extra code. v2 adds a variant, not a rewrite.
+2. **The cap-relevant amount is extracted per form**, not assumed to be `challenge.amount` — so v2's `upto` (cap against the signed maximum) is additive.
+3. **The `nonce` is carried as an opaque `Hex`, never read in v1** (enforced by a test, not by an unreadable type — so v2 reads it without a type migration). Refines an earlier suggestion to type it unreadable; the test-enforced version carries into v2 cleanly.
+**Consequences.** The pure core already decouples the decision from where enforcement lives (CORE-01), so the daemon rung needs no new seam. v2-awareness changes v1 in exactly two small, justified ways (the tagged union — needed anyway — and per-form amount extraction).
+**Rejected.** Building SVM/`upto` parsers now (YAGNI — that is filling, not seam). Typing `nonce` unreadable (forces a v2 type migration for zero v1 benefit over the test-enforced version).
+
+### D-020 — Release & configuration management
+**2026-07-10 · Accepted**
+
+**Context.** A security tool's version number is a trust signal. "v1" (our feature scope) and "1.0.0" (a SemVer stability promise) are different things and must not be conflated.
+**Decision.**
+- **Versioning is SemVer, and we live in `0.x` until 1.0.0 is *earned*.** `0.x` explicitly means "not stable, anything may change" — which is the honest signal for a pre-production guard. `1.0.0` means "we stand behind this as production-ready," is earned by real-world exercise, and may never come (this is an option). Stages: `0.0.x` pre-alpha (core) → `0.1.0` alpha (core + accounting) → `0.x` beta (v1 scope complete) → `1.0.0` earned. No `-alpha.N` suffixes — stability is described in Release notes and the README, not encoded in ceremony.
+- **Two distinct "push" gates.** *GitHub-public* = "you can read and audit this"; gate is coherence (docs match code, CI green). *npm-publish* = "you can depend on this"; gate is the adapter (usable drop-in). GitHub-readable precedes npm-installable. Target: GitHub-public after the accounting layer (tag `v0.1.0`, CI in the same push); npm after the adapter.
+- **Branching is GitHub Flow, not git-flow.** `main` stays green and coherent; each slice is a short-lived branch merged when green. `main` only ever sees green — WIP (which goes red first under TDD) lives on the branch. Adopt PR review only once public and a second human contributes.
+- **Commits: light Conventional Commits** (`feat:`/`fix:`/`docs:`/`test:`/`chore:`). Hard rule: every commit to `main` leaves the suite green; security-relevant commits say so. Add `CHANGELOG.md` at first public push (a changelog is part of a security tool's trust story).
+**Consequences.** The prior-art critique's "standing" concern (D-015) resolves itself: by public-push time it sits beside a working, green guard.
+**Rejected.** git-flow (ceremony with no payoff at two-person scale). Calling the v1 scope "1.0.0" (a stability claim we have not earned). npm-publishing before the tool is usable drop-in.

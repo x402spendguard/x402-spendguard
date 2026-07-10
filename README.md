@@ -29,7 +29,13 @@ v1 enforces, before any payment is signed:
 - **Recipient match** — the signed `to` must equal the challenge `payTo`.
 - **Lifetime bound** — `validBefore` must respect the challenge's `maxTimeoutSeconds`, a bound no facilitator enforces.
 
-v1 does **not** do: replay/nonce protection, the `upto` (metered) scheme, or enforcement against a compromised agent process — all deferred (see below). Provided AS IS, without warranty (see LICENSE).
+**Scope of v1:** EIP-3009 `exact` payments on **EVM chains** (Ethereum and the EVM family — Base, Polygon, Arbitrum, …). Solana/SVM and the `upto` metered scheme are denied with a clear reason and deferred to v2. Base — where most current x402 volume lives — is EVM, so v1 covers today's dominant venue.
+
+Two things that surprise people, stated up front:
+- **Global budgets are per-denomination, not per-dollar.** You set a cap for USDC-on-Base, not a single dollar ceiling across every token — because summing different tokens would require a price feed, and the guard makes no network calls and holds no opinion about value.
+- **An empty allowlist denies everything.** Secure by default: you name your destinations, rather than the guard guessing.
+
+v1 does **not** do: replay/nonce protection, `upto`, non-EVM chains, or enforcement against a compromised agent process — all deferred (see below). Provided AS IS, without warranty (see LICENSE).
 
 ## What it is — and is not
 
