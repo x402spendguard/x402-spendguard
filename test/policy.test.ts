@@ -1,79 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { evaluate } from "../src/policy/engine.js";
 import { assetKey } from "../src/parse.js";
-import type {
-  Address,
-  Amount,
-  Authorization,
-  Caps,
-  Challenge,
-  ChainId,
-  Domain,
-  OpaqueHex,
-  PaymentEvaluation,
-  Policy,
-  SpendState,
-  UnixSeconds,
-} from "../src/types.js";
+import type { Address, ChainId, OpaqueHex, PaymentEvaluation, Policy } from "../src/types.js";
+import { A, T, key, CHAIN, USDC, PAYEE, ATTACKER, ORIGIN, NOW, caps, policy, freshState, state, ev } from "./helpers.js";
 
-// ── Test constructors. Tests build already-parsed (trustworthy) values directly;
-//    parse-boundary behavior is covered in parse.test.ts. Branded casts are the
-//    test's stand-in for "this came through the parser."
-const CHAIN = "eip155:8453" as ChainId; // Base
-const USDC = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as Address;
-const PAYEE = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" as Address;
-const ORIGIN = "weather.example" as Domain;
-const NOW = 1_000_000n as UnixSeconds;
-const A = (n: bigint) => n as Amount;
-const T = (n: bigint) => n as UnixSeconds;
-
-const key = assetKey({ chain: CHAIN, token: USDC });
-
-const caps = (c: Partial<Caps> = {}): Record<string, Caps> => ({
-  [key]: { perRequest: A(1_000_000n), perDomain: A(5_000_000n), global: A(20_000_000n), ...c },
-});
-
-const policy = (over: Partial<Policy> = {}): Policy => ({
-  halt: false,
-  allowlist: [{ address: PAYEE, chain: CHAIN }],
-  caps: caps(),
-  clockSkewSeconds: T(60n),
-  requireOriginMatch: false,
-  ...over,
-});
-
-const freshState = (): SpendState => ({ spentByDomain: {}, spentByAsset: {} });
-
-const challenge = (over: Partial<Challenge> = {}): Challenge => ({
-  scheme: "exact",
-  network: CHAIN,
-  asset: USDC,
-  payTo: PAYEE,
-  amount: A(500_000n),
-  maxTimeoutSeconds: T(600n),
-  resource: "https://weather.example/forecast",
-  ...over,
-});
-
-const authorization = (over: Partial<Authorization> = {}): Authorization => ({
-  form: "eip3009-evm",
-  chainId: CHAIN,
-  verifyingContract: USDC,
-  from: "0xcccccccccccccccccccccccccccccccccccccccc" as Address,
-  to: PAYEE,
-  value: A(500_000n),
-  validAfter: T(0n),
-  validBefore: T(NOW + 300n),
-  nonce: "0xdeadbeef" as OpaqueHex,
-  ...over,
-});
-
-const ev = (c: Partial<Challenge> = {}, a: Partial<Authorization> = {}): PaymentEvaluation => ({
-  origin: ORIGIN,
-  challenge: challenge(c),
-  authorization: authorization(a),
-});
-
+// Tests build already-parsed (trustworthy) values via the shared helpers; the
+// parse boundary itself is covered in parse.test.ts.
 const decide = (e: PaymentEvaluation, p = policy(), s = freshState(), now = NOW) =>
   evaluate(e, p, s, now);
 
@@ -149,13 +81,13 @@ describe("spend caps (per asset,chain denomination)", () => {
   });
 
   it("cap-per-domain", () => {
-    const s: SpendState = { spentByDomain: { [ORIGIN]: { [key]: 4_800_000n } }, spentByAsset: { [key]: 4_800_000n } };
+    const s = state({ spentByDomain: { [ORIGIN]: { [key]: 4_800_000n } }, spentByAsset: { [key]: 4_800_000n } });
     const d = decide(ev(), policy(), s);
     expect(d.reason).toBe("cap.per_domain"); // 4.8 + 0.5 = 5.3 > 5.0
   });
 
   it("cap-global", () => {
-    const s: SpendState = { spentByDomain: {}, spentByAsset: { [key]: 19_800_000n } };
+    const s = state({ spentByAsset: { [key]: 19_800_000n } });
     const d = decide(ev(), policy(), s);
     expect(d.reason).toBe("cap.global"); // 19.8 + 0.5 = 20.3 > 20.0
   });
@@ -163,7 +95,7 @@ describe("spend caps (per asset,chain denomination)", () => {
   it("cap-no-cross-asset-sum", () => {
     // Huge spend recorded in a DIFFERENT denomination must not block this payment.
     const otherKey = assetKey({ chain: CHAIN, token: "0xffffffffffffffffffffffffffffffffffffffff" as Address });
-    const s: SpendState = { spentByDomain: {}, spentByAsset: { [otherKey]: 999_000_000n } };
+    const s = state({ spentByAsset: { [otherKey]: 999_000_000n } });
     expect(decide(ev(), policy(), s).verdict).toBe("allow");
   });
 

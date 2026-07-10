@@ -116,6 +116,9 @@ export interface Policy {
   caps: Record<AssetKey, Caps>;
   /** Clock-skew tolerance for the validBefore bound. Policy, not a code constant (D-018). */
   clockSkewSeconds: UnixSeconds;
+  /** Rolling budget window length, e.g. 86400 for a daily budget. The accounting layer
+   *  zeroes cumulative spend when a window elapses. Policy, not a code constant. */
+  windowSeconds: UnixSeconds;
   /** When true, require the challenge.resource origin to match the request origin. Default lives
    *  in the shipped default policy file, never as a code constant (D-018). */
   requireOriginMatch: boolean;
@@ -127,4 +130,9 @@ export interface SpendState {
   spentByDomain: Record<string, Record<string, bigint>>;
   /** assetKey → cumulative spent this window across all domains (per-denomination global). */
   spentByAsset: Record<string, bigint>;
+  /** Start of the current budget window. Managed by the accounting layer; the pure engine ignores it. */
+  windowStart: UnixSeconds;
+  /** Highest timestamp ever seen — a monotonic guard so a backward clock jump can never
+   *  reset a window or un-count spend (CLOCK-01). Managed by the accounting layer. */
+  lastSeen: UnixSeconds;
 }

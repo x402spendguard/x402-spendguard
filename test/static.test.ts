@@ -69,11 +69,15 @@ describe("injected clock and store (INJ-01)", () => {
   it("no-ambient-clock-or-store", () => {
     for (const [path, code] of srcFiles()) {
       const stripped = stripCommentsAndStrings(code);
-      // No module reads a wall clock or randomness ambiently...
-      for (const pat of [/\bDate\.now\s*\(/, /\bnew\s+Date\s*\(/, /\bperformance\.now\s*\(/, /\bMath\.random\s*\(/]) {
-        expect(pat.test(stripped), `${path} reads an ambient clock/rng via ${pat}`).toBe(false);
+      const isAdapter = path.includes("/adapters/"); // the ONE sanctioned composition-root boundary
+      // No module reads a wall clock or randomness ambiently — except the adapters,
+      // which are exactly where the pure core meets the messy world (INJ-01).
+      if (!isAdapter) {
+        for (const pat of [/\bDate\.now\s*\(/, /\bnew\s+Date\s*\(/, /\bperformance\.now\s*\(/, /\bMath\.random\s*\(/]) {
+          expect(pat.test(stripped), `${path} reads an ambient clock/rng via ${pat}`).toBe(false);
+        }
       }
-      // ...and the pure policy core opens no store (no filesystem).
+      // The pure policy core opens no store (no filesystem). Adapters/accounting may.
       if (path.includes("/policy/")) {
         expect(/\bfrom\s+["']node:fs["']/.test(stripped), `${path} imports fs`).toBe(false);
       }

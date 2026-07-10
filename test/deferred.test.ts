@@ -9,14 +9,6 @@
 // for a requirement whose layer genuinely does not exist yet.
 import { describe, it } from "vitest";
 
-describe("accounting layer — not built yet", () => {
-  it.todo("crash-between-record-and-settle-does-not-undercount"); // ACCT-01
-  it.todo("concurrent-payments-cannot-both-pass"); // ACCT-02
-  it.todo("state-survives-restart"); // ACCT-03
-  it.todo("clock-anomaly-fails-closed"); // CLOCK-01
-  it.todo("spend-record-failure-denies"); // FAIL-03 (accounting half)
-});
-
 describe("audit/log layer — not built yet", () => {
   it.todo("audit-failure-preserves-decision"); // FAIL-03 (audit half)
   it.todo("log-never-contains-signature"); // PRIV-02
