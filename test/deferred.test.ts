@@ -24,6 +24,4 @@ describe("adapter layer — not built yet", () => {
   it.todo("domain-derivation-ignores-redirect"); // DOM-01
 });
 
-describe("config loader — not built yet", () => {
-  it.todo("rejects-world-writable-policy"); // CONF-01
-});
+// CONF-01 (`rejects-world-writable-policy`) is now a REAL test — see config.test.ts.

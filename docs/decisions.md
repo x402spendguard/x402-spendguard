@@ -230,3 +230,19 @@ We follow **parse, don't validate**: untrusted input is converted into a trustwo
 **Tested-and-safe (confirmed by the review):** prototype pollution via a poisoned ledger *value* was inert; binding has no coercion bypass; `assetKey`'s `|` can't be injected; amount/time parsers reject floats/signs/`0x`/whitespace; the `user@host` URL trick resolves to the real host; kill switch, empty-allowlist-deny, CAP-05, engine-throw→deny all hold.
 
 **Process note.** This is what a real code-level adversarial review buys that a design review cannot: three of these (H2, H3, M1) are exploitable and none is visible from the docs. The core policy engine is sound; the edge is where the money leaks.
+
+### D-023 — Policy file format is JSON (dep-free)
+**2026-07-11 · Accepted**
+
+**Context.** The config-loader slice (CONF-01) needs an on-disk policy format. YAML is friendlier to hand-author (comments, less punctuation) but requires a parser dependency; JSON parses with the built-in `JSON.parse`.
+**Decision.** **JSON.** A YAML parser is exactly the class of transitive dependency this guard exists to be skeptical of — adding one to read the *security policy itself* is the wrong trade. It also keeps DEP-01 (zero runtime deps) intact. Human-authoring ergonomics do not outweigh the supply-chain cost for a machine-adjacent file; revisit only if real users demand comments/anchors.
+**Consequence.** `loadPolicyFile` (adapter) does `statSync` → CONF-01 world-writable gate → `readFileSync` → `JSON.parse` → `parsePolicy`. `parsePolicy` (pure, in `parse.ts`) is the config trust boundary: every field required (no code-side defaults — POL-01), money/time re-parsed through the branded primitives, cap keys re-canonicalized (a mixed-case token address must not yield a silently-never-matching cap that fails open), caps map null-prototype. CONF-01's wording updated from `policy.yaml` to the format-agnostic "policy file (`policy.json`)".
+
+### D-024 — Change control (defect vs decision), H1 timing, v0.1.1
+**2026-07-11 · Accepted (process); H1 timing resolved**
+
+**Context.** The CCB question from 2026-07-10 surfaced that M2 (a CLOCK-01 requirement *rescope*) was landed solo when it should have been ratified first. Plus two roadmap items were parked: H1 cross-process lock timing (D-021) and whether to re-tag past v0.1.0.
+**Decisions.**
+- **Change control — the "CCB of two."** A *defect fix* (restores already-intended behavior, has a test) goes straight in. A *scope / requirement / design change* (a new knob, a changed requirement meaning, a rescope) must **converge/ratify FIRST**, even mid-session. Right-sized for a two-person pre-alpha — the one seam a formal CCB would give us, without the ceremony. Folded into D-016's discipline. This slice honored it: `parsePolicy`'s behavior is tested but no new requirement ID (a proposed **CONF-02**) was minted unilaterally — it's raised to Kevin instead.
+- **H1 (ACCT-05) timing → document now, build pre-publish.** Ship v1 with the documented "one instance per wallet" limitation; build the real cross-process lock as its own slice before the npm-publish gate. Corruption is already prevented (unique temp name + fsync+rename); only lost-updates remain, and they are loudly flagged.
+- **Re-tag v0.1.1 — yes, a light tag** for the hardening landed past v0.1.0 (D-022). Outward-facing, so pushed only on Kevin's go.

@@ -119,9 +119,10 @@ All caps are denominated per **(asset, chain)** and compared in integer smallest
 
 | ID | Requirement | Threat | Test |
 |----|-------------|--------|------|
-| **CONF-01** | The guard refuses to load a world-writable `policy.yaml` (a deterministic startup gate — mechanism, not judgment). | T15 | `rejects-world-writable-policy` |
+| **CONF-01** | The guard refuses to load a world-writable policy file (`policy.json`) — a deterministic startup gate, mechanism not judgment. Scoped to the world-write bit only (not group, not owner). | T15 | `rejects-world-writable-policy` |
 
 > CONF-01 is the *only* defense v1 offers against policy-file tampering (T15/A8). Full policy-file integrity against an attacker with host write access is A5-adjacent and out of scope; policy integrity otherwise rests on filesystem permissions the user controls.
+> Format is JSON (D-023): dep-free, so the guard adds no parser to its own supply chain. The loader also *parses* the file into a trustworthy `Policy` at the boundary — every field required (no code-side defaults, POL-01), money/time re-parsed through the branded primitives, cap keys re-canonicalized. A named requirement for that parse behavior (**CONF-02**) is proposed, pending ratification.
 
 ## Core hygiene
 

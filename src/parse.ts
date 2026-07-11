@@ -7,14 +7,17 @@
 
 import type {
   Address,
+  AllowlistEntry,
   Amount,
   AssetId,
   AssetKey,
+  Caps,
   ChainId,
   Challenge,
   Authorization,
   Domain,
   OpaqueHex,
+  Policy,
   UnixSeconds,
 } from "./types.js";
 
@@ -184,5 +187,96 @@ export function parseAuthorization(raw: Record<string, unknown>): Result<Authori
     validAfter: validAfter.value,
     validBefore: validBefore.value,
     nonce: nonce.value,
+  });
+}
+
+/**
+ * Parse a raw (already JSON-decoded) policy into a trustworthy `Policy`. This is the
+ * config trust boundary: user-authored file contents become branded types exactly once.
+ *
+ * Fail-closed and opinion-free:
+ *  - EVERY field is required. There are NO code-side defaults — a default threshold baked
+ *    in here would be the guard deciding policy (POL-01). Defaults live in a shipped policy
+ *    file the user can read, never as a constant in this function.
+ *  - Money is re-parsed through `makeAmount` (rejects floats/signs/junk) and times through
+ *    `makeUnixSeconds`, so the interior can trust every value is a non-negative integer.
+ *  - Each cap key is re-derived from its `(chain, token)` and re-canonicalized via `assetKey`,
+ *    so a token address written in mixed case still resolves to the coordinate the engine
+ *    looks up — a silently-never-matching cap would fail OPEN toward the global cap.
+ *  - The caps map is null-prototype: an own "__proto__" key (as JSON.parse can produce) is an
+ *    ordinary — and here, rejected — coordinate, never a path to prototype pollution.
+ */
+export function parsePolicy(raw: unknown): Result<Policy> {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return err("config.not_an_object", "Policy must be a JSON object.");
+  }
+  const o = raw as Record<string, unknown>;
+
+  if (typeof o.halt !== "boolean") {
+    return err("config.halt_invalid", "Policy.halt must be a boolean.");
+  }
+  if (typeof o.requireOriginMatch !== "boolean") {
+    return err("config.require_origin_match_invalid", "Policy.requireOriginMatch must be a boolean.");
+  }
+
+  if (!Array.isArray(o.allowlist)) {
+    return err("config.allowlist_invalid", "Policy.allowlist must be an array.");
+  }
+  const allowlist: AllowlistEntry[] = [];
+  for (const entry of o.allowlist) {
+    if (typeof entry !== "object" || entry === null) {
+      return err("config.allowlist_invalid", "Each allowlist entry must be an object with address and chain.");
+    }
+    const e = entry as Record<string, unknown>;
+    const address = makeAddress(e.address);
+    if (!address.ok) return address;
+    const chain = makeChainId(e.chain);
+    if (!chain.ok) return chain;
+    allowlist.push({ address: address.value, chain: chain.value });
+  }
+
+  if (typeof o.caps !== "object" || o.caps === null || Array.isArray(o.caps)) {
+    return err("config.caps_invalid", "Policy.caps must be an object.");
+  }
+  const caps = Object.create(null) as Record<AssetKey, Caps>;
+  for (const [rawKey, rawCaps] of Object.entries(o.caps as Record<string, unknown>)) {
+    const sep = rawKey.indexOf("|");
+    if (sep <= 0 || sep === rawKey.length - 1) {
+      return err("config.cap_key_malformed", `Cap key "${rawKey}" is not a "chain|token" coordinate.`);
+    }
+    const chain = makeChainId(rawKey.slice(0, sep));
+    if (!chain.ok) return err("config.cap_key_malformed", `Cap key "${rawKey}" has a malformed chain.`);
+    const token = makeAddress(rawKey.slice(sep + 1));
+    if (!token.ok) return err("config.cap_key_malformed", `Cap key "${rawKey}" has a malformed token address.`);
+    const key = assetKey({ chain: chain.value, token: token.value });
+
+    if (typeof rawCaps !== "object" || rawCaps === null) {
+      return err("config.caps_invalid", `Caps for "${key}" must be an object with perRequest, perDomain, global.`);
+    }
+    const c = rawCaps as Record<string, unknown>;
+    const perRequest = makeAmount(c.perRequest);
+    if (!perRequest.ok) return perRequest;
+    const perDomain = makeAmount(c.perDomain);
+    if (!perDomain.ok) return perDomain;
+    const global = makeAmount(c.global);
+    if (!global.ok) return global;
+    caps[key] = { perRequest: perRequest.value, perDomain: perDomain.value, global: global.value };
+  }
+
+  const clockSkewSeconds = makeUnixSeconds(o.clockSkewSeconds);
+  if (!clockSkewSeconds.ok) return clockSkewSeconds;
+  const maxAuthLifetimeSeconds = makeUnixSeconds(o.maxAuthLifetimeSeconds);
+  if (!maxAuthLifetimeSeconds.ok) return maxAuthLifetimeSeconds;
+  const windowSeconds = makeUnixSeconds(o.windowSeconds);
+  if (!windowSeconds.ok) return windowSeconds;
+
+  return ok({
+    halt: o.halt,
+    allowlist,
+    caps,
+    clockSkewSeconds: clockSkewSeconds.value,
+    maxAuthLifetimeSeconds: maxAuthLifetimeSeconds.value,
+    windowSeconds: windowSeconds.value,
+    requireOriginMatch: o.requireOriginMatch,
   });
 }
