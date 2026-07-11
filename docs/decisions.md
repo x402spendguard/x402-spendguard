@@ -264,3 +264,17 @@ We follow **parse, don't validate**: untrusted input is converted into a trustwo
 - **F4 — no tamper-evidence.** Plain append-only JSONL; a writer can delete/forge lines undetected. Load-bearing for a trail a dashboard is meant to *trust*. Document "log integrity == filesystem permissions"; v2 = hash chain (each entry carries the prior line's hash), pairing with the seq number.
 - **F5 — unbounded growth → self-blinding.** No rotation/size cap; attacker-driven volume fills the disk, which then triggers the silent loss above. Roadmap (rotation), noted for the chain.
 - **L2 — world-writable permission check on the *ledger* file.** F2 secured the new log file; the symmetric check on `FileSpendStore` remains the deferred L2 (converge-first).
+
+### D-026 — SDK adapter: full-correlation interposition, v2 first
+**2026-07-11 · Accepted**
+
+**Context.** Re-verifying the current x402 SDK (`@x402/core@2.18.0`) against source surfaced the load-bearing fact: the `resource.url` available at the `onBeforePaymentCreation` hook is **server-declared** (it comes from the 402 body the payee sent). DOM-01 forbids keying a budget on a server-controlled field — so per-domain budgets **cannot** be honestly enforced at the hook. Neither the hook nor the signer sees the real outbound request URL; that lives only in the fetch/axios transport wrapper. The signed struct, the offer, and the real origin thus live in three different places.
+**Decision — full-correlation interposition (chosen over hook-only and signer-only).**
+- **Veto at the signer-wrap.** Wrapping `signTypedData` is the last gate before a signature exists, works on BOTH generations, and is hardest to bypass. It binds the **exact struct about to be signed** — catching a compromised client that signs something other than the offer (the whole point of screening the signature, not the offer).
+- **Origin from the transport wrapper** (fetch/axios) — the real client-observed request origin, satisfying DOM-01 honestly. NOT the hook's server-declared `resource.url`.
+- **Challenge from the hook / 402 body.** Correlated per payment flow via `PaymentFlowContext` (observe origin + challenge, consume-and-clear at signing).
+- **Fail-closed throughout:** unsupported struct (`primaryType` ≠ `TransferWithAuthorization`), incomplete correlation, or a deny all THROW before the real signer runs — no signature on anything but a clean allow.
+- **v2 first, v1 next** (v1 deprecated but deployed). Permit2/upto/SVM denied at parse (v1 = EVM `exact` only).
+**Built so far (branch `slice/adapter-wire-v2`):** the pure wire normalization (`x402-wire.ts`: typed-data → `Authorization`, v2 offer + top-level `resource` → `Challenge`) and the veto core (`x402-guarded-signer.ts`: `PaymentFlowContext` + `guardedSigner`).
+**Deferred (converge-first):** the transport-capture wrapper (real origin) and the drop-in factory that binds the hook + transport + guarded signer to a `SpendGuard`/`LoggingGuard` — plus the **SDK dependency call** (`@x402/core` as a *peer* dependency, so DEP-01's zero-runtime-deps posture holds and the user brings their own client).
+**Serial-flow assumption:** one payment flow at a time per context. Interleaved concurrent flows can mis-correlate; a mismatch fails closed via the binding checks, but per-domain attribution assumes serial use — documented, like one-instance-per-wallet.
