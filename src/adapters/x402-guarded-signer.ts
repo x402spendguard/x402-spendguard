@@ -1,7 +1,10 @@
 // The veto core. This is where the guard actually stops a payment: by wrapping the x402
 // client's EVM signer so that `signTypedData` runs the guard FIRST and only reaches the real
-// signer on an allow. It is the last gate before a signature exists — the hardest point to
-// bypass by accident, and it works on both x402 generations (see the ground-truth notes).
+// signer on an allow. It is the last gate before a signature exists, and it works on both x402
+// generations (see the ground-truth notes). Crucially, because the SAME EIP-712 digest can be
+// produced by other signing methods (`sign`/`signMessage`/`signTransaction`), the wrap closes
+// EVERY signing route on the returned object — not just `signTypedData` (Finding A). Otherwise
+// the veto would be one `wrapped.sign(...)` call away from silent bypass on its own object.
 //
 // The signer sees only the EIP-712 struct — not the request origin, not the offer. So the
 // full evaluation is CORRELATED here from three sources captured across one payment flow:
@@ -51,12 +54,28 @@ export class PaymentFlowContext {
 
   /** Record the real client-observed request origin (from the transport wrapper, DOM-01). */
   observeOrigin(origin: Domain): void {
+    this.assertNoInterleave(this.origin, origin, "origin");
     this.origin = origin;
   }
 
   /** Record the challenge parsed from the offer / 402 body (from the payment hook). */
   observeChallenge(challenge: Challenge): void {
+    this.assertNoInterleave(this.challenge, challenge, "challenge");
     this.challenge = challenge;
+  }
+
+  /** Enforce the serial-flow invariant instead of merely documenting it (Finding B): a second,
+   *  DIFFERENT observation before the prior flow is consumed means two payment flows are
+   *  interleaving on one binding. Fail closed rather than silently mis-attribute spend — binding
+   *  checks catch a struct/challenge mismatch, but they cannot see origin, so an interleaved
+   *  origin would otherwise mis-charge the per-domain bucket with no error. */
+  private assertNoInterleave<T>(existing: T | undefined, incoming: T, what: string): void {
+    if (existing !== undefined && existing !== incoming) {
+      throw new PaymentBlockedError(
+        "adapter.concurrent_flow",
+        `A second, different ${what} was observed before the prior payment flow signed; concurrent flows on one binding are unsupported (use one binding per flow).`,
+      );
+    }
   }
 
   /** Take the correlated pair for a signing event and clear it. Throws (fail-closed) if either
@@ -86,8 +105,17 @@ export function guardedSigner<S extends ClientEvmSigner>(
   guard: Authorizer,
   context: PaymentFlowContext,
 ): S {
+  // Any signature over the same digest by another route would bypass the veto: the EIP-3009
+  // authorization IS an EIP-712 signature, reproducible via sign()/signMessage()/signTransaction().
+  // Only the guarded signTypedData is a permitted signing route; close all others, fail-closed.
+  const blockSigningRoute = (method: string) => async (): Promise<never> => {
+    throw new PaymentBlockedError(
+      "adapter.unguarded_signing_route",
+      `Refused '${method}': the guard vets only signTypedData; no other signing route is permitted.`,
+    );
+  };
   return {
-    ...inner,
+    ...inner, // preserve NON-signing capabilities (address, readContract, getTransactionCount, …)
     async signTypedData(td: TypedData): Promise<`0x${string}`> {
       // Build the authorization from the EXACT struct about to be signed — bind reality,
       // not the offer. An unsupported struct (e.g. a Permit2 witness) is refused here.
@@ -103,5 +131,10 @@ export function guardedSigner<S extends ClientEvmSigner>(
       }
       return inner.signTypedData(td);
     },
-  };
+    // Every OTHER route to a signature is closed (Finding A). These override any same-named
+    // method the concrete signer exposed via the spread above.
+    sign: blockSigningRoute("sign"),
+    signMessage: blockSigningRoute("signMessage"),
+    signTransaction: blockSigningRoute("signTransaction"),
+  } as S;
 }

@@ -7,7 +7,7 @@ import {
 } from "../src/adapters/x402-guarded-signer.js";
 import type { TypedData } from "../src/adapters/x402-wire.js";
 import type { Authorizer } from "../src/audit/decision-log.js";
-import type { PaymentEvaluation, PolicyDecision } from "../src/types.js";
+import type { Domain, PaymentEvaluation, PolicyDecision } from "../src/types.js";
 import { ORIGIN, PAYEE, USDC, NOW, challenge } from "./helpers.js";
 
 const PAYER = "0xcccccccccccccccccccccccccccccccccccccccc" as `0x${string}`;
@@ -126,6 +126,40 @@ describe("guardedSigner — the veto core", () => {
     const guarded = guardedSigner(signer, new FakeGuard(ALLOW), new PaymentFlowContext());
     expect(guarded.address).toBe(PAYER);
   });
+
+  it("closes every alternate signing route on the returned object (Finding A: no veto bypass)", async () => {
+    // A viem-account-like inner ALSO exposes sign/signMessage/signTransaction. The same EIP-712
+    // digest can be produced by any of them, so a spread that passed them through unguarded would
+    // bypass the veto. With a DENY guard, every alternate route must throw — never sign.
+    const inner = {
+      address: PAYER,
+      async signTypedData() { return "0xTYPED" as `0x${string}`; },
+      async sign() { return "0xRAW" as `0x${string}`; },
+      async signMessage() { return "0xMSG" as `0x${string}`; },
+      async signTransaction() { return "0xTX" as `0x${string}`; },
+    };
+    const g = guardedSigner(inner, new FakeGuard(DENY), fullContext()) as unknown as Record<
+      "sign" | "signMessage" | "signTransaction",
+      (a?: unknown) => Promise<unknown>
+    >;
+    await expect(g.sign({ hash: "0xabc" })).rejects.toThrow(/unguarded_signing_route/);
+    await expect(g.signMessage({ message: "x" })).rejects.toThrow(/unguarded_signing_route/);
+    await expect(g.signTransaction({})).rejects.toThrow(/unguarded_signing_route/);
+  });
+
+  it("preserves non-signing methods (reads) through the wrap", async () => {
+    let reads = 0;
+    const inner = {
+      address: PAYER,
+      async signTypedData() { return "0x" as `0x${string}`; },
+      async readContract() { reads++; return "ok"; },
+    };
+    const g = guardedSigner(inner, new FakeGuard(ALLOW), new PaymentFlowContext()) as unknown as {
+      readContract: () => Promise<unknown>;
+    };
+    await g.readContract();
+    expect(reads).toBe(1); // non-signing capability preserved
+  });
 });
 
 describe("PaymentFlowContext", () => {
@@ -145,5 +179,20 @@ describe("PaymentFlowContext", () => {
     expect(() => ctx.consume()).toThrow(PaymentBlockedError); // nothing observed
     ctx.observeOrigin(ORIGIN);
     expect(() => ctx.consume()).toThrow(PaymentBlockedError); // only origin
+  });
+
+  it("rejects an interleaved concurrent flow instead of silently mis-correlating (Finding B)", () => {
+    const ctx = new PaymentFlowContext();
+    ctx.observeOrigin(ORIGIN);
+    // A second, DIFFERENT origin before consume = two flows interleaving → fail closed.
+    expect(() => ctx.observeOrigin("other.example" as Domain)).toThrow(/concurrent_flow/);
+    // Re-observing the SAME origin is idempotent (no throw).
+    expect(() => ctx.observeOrigin(ORIGIN)).not.toThrow();
+  });
+
+  it("rejects a second, different challenge before consume (Finding B)", () => {
+    const ctx = new PaymentFlowContext();
+    ctx.observeChallenge(challenge());
+    expect(() => ctx.observeChallenge(challenge())).toThrow(/concurrent_flow/); // different object
   });
 });

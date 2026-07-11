@@ -40,7 +40,13 @@ export function challengeCaptureHook(context: PaymentFlowContext): BeforePayment
 export interface SpendGuardBinding {
   /** The shared correlation context (usually you don't touch this directly). */
   context: PaymentFlowContext;
-  /** Wrap your EVM signer; pass the result to the x402 EVM scheme. */
+  /**
+   * MANDATORY WIRE (Finding D). Wrap your EVM signer and pass the RESULT to the x402 EVM scheme.
+   * The veto *is* this wrap — if you forget it and pass your raw signer, the guard never runs and
+   * every payment is signed unchecked, SILENTLY. Unlike `wrapFetch`/`hook` (whose omission fails
+   * closed via an incomplete context), a missing `wrapSigner` fails OPEN and cannot self-detect.
+   * Wire this one first.
+   */
   wrapSigner: <S extends ClientEvmSigner>(signer: S) => S;
   /** Register on the client: `client.onBeforePaymentCreation(binding.hook)`. */
   hook: BeforePaymentCreationHookLike;

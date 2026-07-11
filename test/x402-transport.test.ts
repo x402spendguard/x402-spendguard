@@ -6,7 +6,7 @@ import { challenge } from "./helpers.js";
 const resp = (status: number, url: string): ResponseLike => ({ status, url });
 
 describe("guardedFetch — captures the real client-observed origin (DOM-01)", () => {
-  it("observes the origin from a 402 response's URL", async () => {
+  it("observes the origin from the client's 402 request", async () => {
     const ctx = new PaymentFlowContext();
     const inner: FetchLike = async () => resp(402, "https://weather.example/forecast");
     const res = await guardedFetch(ctx, inner)("https://weather.example/forecast");
@@ -16,14 +16,16 @@ describe("guardedFetch — captures the real client-observed origin (DOM-01)", (
     expect(ctx.consume().origin).toBe("weather.example");
   });
 
-  it("uses the URL that RECEIVED the 402 after redirects (response.url), not the request input", async () => {
+  it("domain-derivation-ignores-redirect", async () => {
+    // The client called shop.example; the server answered the 402 from a rotating subdomain
+    // (response.url = evil-cdn). The budget must key on the CLIENT-CHOSEN host — redirect-immune
+    // — not the server-controlled response.url, or a payee could mint a fresh bucket each call.
     const ctx = new PaymentFlowContext();
-    // Request started at start.example but was redirected; the 402 came from final.example.
-    const inner: FetchLike = async () => resp(402, "https://final.example/paid");
-    await guardedFetch(ctx, inner)("https://start.example/x");
+    const inner: FetchLike = async () => resp(402, "https://sub7.evil-cdn.example/paid");
+    await guardedFetch(ctx, inner)("https://shop.example/api");
 
     ctx.observeChallenge(challenge());
-    expect(ctx.consume().origin).toBe("final.example");
+    expect(ctx.consume().origin).toBe("shop.example"); // NOT evil-cdn.example
   });
 
   it("does NOT observe an origin on a non-402 response", async () => {

@@ -113,7 +113,9 @@ All caps are denominated per **(asset, chain)** and compared in integer smallest
 
 | ID | Requirement | Threat | Test |
 |----|-------------|--------|------|
-| **DOM-01** | The domain a budget is keyed on comes from the **client-observed request origin** (the origin that actually received the 402, after redirects), **never** from a server-controlled challenge field such as `resource`. | T14 | `domain-derivation-ignores-redirect` |
+| **DOM-01** | The domain a budget is keyed on comes from the **host the client chose to request** (redirect-immune), **never** from a server-controlled field — not the challenge `resource`, and not the post-redirect `response.url` (a payee can redirect / rotate subdomains to mint a fresh per-domain bucket). | T14 | `domain-derivation-ignores-redirect` |
+
+> **Per-domain is a budgeting aid, not the security boundary.** Per-*host* bucketing ≠ per-*counterparty*: a payee spread across many hostnames is never bounded by the per-domain cap regardless of which URL keys it. The **global (per-asset,chain) cap is the boundary** against a hostile counterparty; per-domain limits blast radius across *cooperating* domains. (Refined per the adapter adversarial review — D-026, Finding C.)
 
 ## Configuration integrity
 

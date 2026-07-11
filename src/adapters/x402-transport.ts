@@ -1,11 +1,16 @@
-// Transport capture: the ONLY place the real client-observed request origin is visible.
-// The x402 payment hook's resource URL is server-declared (the payee's self-report), which
-// DOM-01 forbids as a budget key. So we wrap the fetch transport the x402 client uses and,
-// when a response is a 402, record the host of the URL that ACTUALLY returned it — after
-// redirects (`response.url` is the final URL). That host becomes the budget domain.
+// Transport capture: the place the real client-observed request origin is visible. The x402
+// payment hook's resource URL is server-declared (the payee's self-report), which DOM-01 forbids
+// as a budget key. So we wrap the fetch transport the x402 client uses and, when a response is a
+// 402, record the host of the URL THE CLIENT CHOSE TO CALL as the budget domain.
+//
+// Why the request host and NOT `response.url` (Finding C): `response.url` is the post-redirect
+// URL, which the server controls — a payee can redirect or rotate subdomains to mint a fresh
+// per-domain bucket every time and evade its own per-domain cap. The client's chosen request
+// host is redirect-immune. (Per-domain is a budgeting aid; the GLOBAL cap is the security
+// boundary against a payee spread across many hostnames — see REQUIREMENTS DOM-01.)
 //
 // Pure and dependency-free: it decorates an injected fetch-like function and reads only
-// `status` and `url` off the response, so it needs no DOM lib types and no @x402 import.
+// `status` off the response, so it needs no DOM lib types and no @x402 import.
 import { makeDomain } from "../parse.js";
 import type { PaymentFlowContext } from "./x402-guarded-signer.js";
 
@@ -32,8 +37,9 @@ export function guardedFetch<Res extends ResponseLike>(
   return async (input, init) => {
     const response = await innerFetch(input, init);
     if (response.status === 402) {
-      const source = response.url && response.url.length > 0 ? response.url : String(input);
-      const origin = makeDomain(source);
+      // Key on the client-chosen request host — redirect-immune — NOT the server-controlled
+      // response.url. If no origin can be derived, observe nothing → the signer fails closed.
+      const origin = makeDomain(String(input));
       if (origin.ok) context.observeOrigin(origin.value);
     }
     return response;

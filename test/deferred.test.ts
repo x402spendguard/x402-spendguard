@@ -18,8 +18,6 @@ describe("cross-process accounting — not built yet", () => {
 // FAIL-03 audit half (`audit-failure-preserves-decision`) and PRIV-02
 // (`log-never-contains-signature`) are now REAL tests — see decision-log.test.ts.
 
-describe("adapter layer — not built yet", () => {
-  it.todo("domain-derivation-ignores-redirect"); // DOM-01
-});
+// DOM-01 (`domain-derivation-ignores-redirect`) is now a REAL test — see x402-transport.test.ts.
 
 // CONF-01 (`rejects-world-writable-policy`) is now a REAL test — see config.test.ts.
