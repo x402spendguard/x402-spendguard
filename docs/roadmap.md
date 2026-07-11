@@ -27,6 +27,28 @@ Convention: each item names its **gate** (what must be true before it ships) and
   compares the challenge by reference, so a re-parsed-equal challenge re-observed before `consume`
   fails closed (the safe direction) rather than being treated as idempotent.
 
+- **Live testnet end-to-end harness — the top gate before any funded wallet.** Prove the real
+  `@x402` client + a real signer + our binding actually blocks a bad payment against a live
+  facilitator, and specifically that the SDK reaches a signature **only** through the wrapped
+  `signTypedData` and no other route (Finding A, in the wild). Publish it in-repo, with guardrails:
+  **no secrets committed** (testnet-only wallet key from an untracked `.env`; ship a `.env.example`
+  + setup docs); it lives **outside `src/`** (`test/e2e/` or `examples/`) because it makes real
+  outbound calls — the core's provable no-egress guarantee must stay intact; **CI-gated** (opt-in
+  behind a flag / separate `test:e2e`, never the default green-main gate).
+
+- **Read APIs for dashboard integration — pull, not push.** Surface what the guard captures so
+  others can build their own dashboard tech, WITHOUT the guard ever egressing. The distinction:
+  a read interface (the user pulls their own data locally) is not egress; only the guard
+  *initiating* an outbound send is. Ladder, tightest first: (1) the **JSONL decision log already
+  is the read API** (structured, `v:1`, `0o600`); (2) a read-only in-process **`snapshot()`**
+  (current spend per (domain,asset), cap headroom, window, halt) — **the cheap first step, fully
+  in-boundary**; (3) optional, opt-in, *separate* module — a **loopback-only, read-only** local
+  endpoint for a separate-process UI (never in core); (4) **not ours** — the fleet collector /
+  cross-machine aggregation (management edge): the integrator builds it on their infra with their
+  egress decision, atop our read interface. The read surface must be a documented, versioned
+  contract. The guard stays a data *source the user controls, never a sender* — the inverse of
+  Sentinel. (Management-edge egress is still converge-first, likely with Opus.)
+
 - **Dev-tooling vulnerabilities.** `npm audit` flags a critical/high/moderate in the
   `vitest`/`vite`/`esbuild` dev tree (dev-server / UI-server issues) — **dev-only, not shipped**
   (runtime `npm audit --omit=dev` = 0). Fix = upgrade `vitest` to 4.x (a breaking change); evaluate
