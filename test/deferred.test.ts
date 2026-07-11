@@ -15,10 +15,8 @@ describe("cross-process accounting — not built yet", () => {
   it.todo("cross-process-cannot-both-pass"); // ACCT-05
 });
 
-describe("audit/log layer — not built yet", () => {
-  it.todo("audit-failure-preserves-decision"); // FAIL-03 (audit half)
-  it.todo("log-never-contains-signature"); // PRIV-02
-});
+// FAIL-03 audit half (`audit-failure-preserves-decision`) and PRIV-02
+// (`log-never-contains-signature`) are now REAL tests — see decision-log.test.ts.
 
 describe("adapter layer — not built yet", () => {
   it.todo("domain-derivation-ignores-redirect"); // DOM-01
