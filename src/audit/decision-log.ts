@@ -6,16 +6,24 @@
 //    capability: no signature (the decision core has none by construction), no nonce (half
 //    the replay tuple), no raw authorization. `toLogEntry` is that projection; the entry
 //    type is a closed set of primitive strings, so an entry is safe by construction.
-//  - FAIL-03 (audit half) — observability is strictly OFF the enforcement path. The logger
-//    only ever sees an ALREADY-FINAL decision and returns it verbatim; a failing/slow/absent
-//    audit sink can never flip an allow to a deny or vice versa (`LoggingGuard`).
+//  - FAIL-03 (audit half) — the audit NEVER changes the verdict. The logger only ever sees an
+//    ALREADY-FINAL decision and returns it verbatim, so a failing/absent sink cannot flip an
+//    allow to a deny or back. This part is STRUCTURAL. Liveness, however, is not fully
+//    decoupled: `authorize` awaits the append, so a slow/stalled sink adds LATENCY to the
+//    decision (never changes it). The bundled FileDecisionLog fsyncs synchronously — like the
+//    spend store — so an append timeout can't bound that; true decoupling (async I/O, or
+//    fire-and-forget) is a converge-first design item shared with the store (see D-025, F1).
 
 import type { PaymentEvaluation, PolicyDecision, UnixSeconds } from "../types.js";
 import type { Clock } from "../accounting/guard.js";
 
-/** One audit record. Every field is a primitive string (JSON/JSONL-serializable, no bigint,
- *  no float) and is safe to persist — deliberately NO nonce, no payer, no signed payload. */
+/** One audit record. Every field is a JSON-serializable primitive (money as a decimal string,
+ *  never bigint/float) and is safe to persist — deliberately NO nonce, no payer, no signed
+ *  payload. `v` versions the on-disk contract so a downstream reader/dashboard can evolve
+ *  against a known shape instead of guessing. */
 export interface LogEntry {
+  /** Schema version of this record. Bump on any breaking shape change (F3). */
+  v: number;
   /** Decision time, decimal Unix seconds as a string (bigint has no JSON form). */
   at: string;
   verdict: "allow" | "deny";
@@ -43,6 +51,7 @@ export interface LogEntry {
 export function toLogEntry(ev: PaymentEvaluation, decision: PolicyDecision, at: UnixSeconds): LogEntry {
   const a = ev.authorization;
   return {
+    v: 1,
     at: at.toString(),
     verdict: decision.verdict,
     reason: decision.reason,
@@ -68,9 +77,10 @@ export interface DecisionLog {
 /**
  * Wrap an `Authorizer` so every decision is recorded — WITHOUT the audit ever affecting the
  * decision. The inner guard runs first and its verdict is what we return, unchanged; the log
- * write is attempted after and its failure is swallowed (FAIL-03 audit half). This decorator
- * is what makes "observability is off the enforcement path" structural rather than a promise:
- * the logger physically cannot see a decision before it is final, nor mutate it.
+ * write is attempted after and its failure is swallowed (FAIL-03 audit half). This makes
+ * VERDICT-integrity structural — the logger physically cannot see a decision before it is
+ * final, nor mutate it. It does NOT decouple liveness: the append is awaited, so a slow sink
+ * only ever adds latency, never a different verdict (see the FAIL-03 note at the top, and D-025 F1).
  */
 export class LoggingGuard implements Authorizer {
   constructor(

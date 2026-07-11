@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -16,7 +16,7 @@ import { A, T, NOW, ORIGIN, PAYEE, USDC, CHAIN, ev } from "./helpers.js";
 
 // The exact, curated set of fields a log entry may carry. Anything outside this set —
 // the nonce, the payer, a signature, the raw authorization — is a PRIV-02 regression.
-const SAFE_KEYS = ["at", "amount", "asset", "chain", "detail", "origin", "reason", "to", "verdict"];
+const SAFE_KEYS = ["v", "at", "amount", "asset", "chain", "detail", "origin", "reason", "to", "verdict"];
 
 const ALLOW: PolicyDecision = { verdict: "allow", reason: "ok", detail: "All checks passed." };
 const DENY: PolicyDecision = { verdict: "deny", reason: "halt", detail: "Kill switch engaged." };
@@ -66,6 +66,7 @@ describe("decision log — PRIV-02 (never logs a bearer capability)", () => {
     expect(entry.chain).toBe(CHAIN);
     expect(entry.amount).toBe("500000"); // bigint serialized as a decimal string
     expect(entry.at).toBe(NOW.toString());
+    expect(entry.v).toBe(1); // versioned on-disk contract (F3)
   });
 });
 
@@ -126,5 +127,15 @@ describe("FileDecisionLog — durable append-only JSONL seam", () => {
     expect(second.verdict).toBe("deny");
     expect(second.amount).toBe("700000");
     expect(second.at).toBe((NOW + 1n).toString());
+    expect(first.v).toBe(1); // schema version persisted on disk
+  });
+
+  it("creates the log file owner-private (not group- or world-readable) — F2", async () => {
+    // The log holds payees/amounts/origins/timing; a fresh log must not leak to other local
+    // users. Mirror of CONF-01's world-writable refusal, on the read side.
+    const path = join(dir, "perms.jsonl");
+    await new FileDecisionLog(path).append(toLogEntry(ev(), ALLOW, NOW));
+    const mode = statSync(path).mode & 0o777;
+    expect(mode & 0o077).toBe(0); // no group/other permission bits at all
   });
 });
