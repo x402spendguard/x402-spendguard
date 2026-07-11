@@ -5,6 +5,35 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). **This project is in `0.x` and is NOT
 stable — anything may change until `1.0.0` is earned.**
 
+## [0.1.2] — 2026-07-11
+
+The **drop-in SDK adapter** for x402 v2 — the guard now installs in front of a real x402
+client, not just as a core library. Still pre-alpha; not yet validated against a live flow.
+
+### Added
+- **`createSpendGuardBinding(guard)`** — binds a guard to the three x402 interposition points
+  (signer, payment hook, transport) through one shared correlation context. The veto happens
+  at the signer wrap: it binds the **real EIP-712 struct** about to be signed, refuses
+  unsupported structs (Permit2 / `upto`), and correlates the client-observed origin + offer +
+  struct before allowing the signature. Built against verified `@x402/core@2.18.0`.
+- **Honest DOM-01** — the per-domain budget keys on the **client-chosen request host**
+  (redirect-immune), never a server-controlled field. Per-domain is a budgeting aid; the
+  **global cap is the security boundary** against a payee spread across hostnames.
+- **`@x402/core` + `@x402/evm`** as *optional peer* dependencies. Zero runtime deps still
+  holds — the core needs no SDK; the adapter binds to the client you already have.
+
+### Security
+- Adversarial review (Opus) caught, and we closed, a **veto bypass**: the signer wrap now
+  closes *every* signing route (`sign` / `signMessage` / `signTransaction`), not just
+  `signTypedData`, since the same authorization signature could be produced by an alternate
+  method. Concurrent payment flows on one binding now fail closed rather than mis-attributing
+  spend.
+
+### Not yet
+- The **v1 wire path** (deprecated but deployed) and a **live testnet end-to-end** harness.
+  Until the latter exists, do not place this in front of a funded wallet. See
+  [docs/roadmap.md](docs/roadmap.md).
+
 ## [0.1.1] — 2026-07-11
 
 Security hardening from two adversarial code reviews, plus the first edge slice: a

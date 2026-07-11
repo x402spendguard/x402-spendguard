@@ -14,7 +14,18 @@ Convention: each item names its **gate** (what must be true before it ships) and
   drop-in, all against verified `@x402/core@2.18.0`. **Remaining:** the **v1 wire path** (deprecated
   but deployed — `maxAmountRequired` + loose network strings, two divergent v1 schemas), and
   **live-flow integration testing** against a testnet/facilitator (not unit-testable in-repo).
+  The live harness should specifically confirm the real x402 client reaches a signature *only*
+  through the wrapped `signTypedData` and no other route (Finding A, in the wild).
   (THREAT_MODEL ASM3; REQUIREMENTS DOM-01.)
+
+- **Adapter veto hardening — blocklist → allowlist (post-review residual, non-blocking).** The
+  signer wrap spreads the inner signer, then overrides the three known signing methods
+  (`sign`/`signMessage`/`signTransaction`) to fail closed — covering every route to the EIP-3009
+  signature *today*, but a *future* viem/SDK signing method would be re-exposed by the spread. The
+  durable pattern is an **allowlist**: return only `address` + the guarded `signTypedData` +
+  explicitly-named non-signing methods. (Opus, D-026.) *Minor, related:* the interleave check
+  compares the challenge by reference, so a re-parsed-equal challenge re-observed before `consume`
+  fails closed (the safe direction) rather than being treated as idempotent.
 
 - **Dev-tooling vulnerabilities.** `npm audit` flags a critical/high/moderate in the
   `vitest`/`vite`/`esbuild` dev tree (dev-server / UI-server issues) — **dev-only, not shipped**
