@@ -64,6 +64,7 @@ Limits we hold ourselves to, stated up front:
 - **[TEST_PLAN.md](TEST_PLAN.md)** — testing methodology: how we prove the requirements hold.
 - **[SECURITY.md](SECURITY.md)** — how to report a vulnerability, and our disclosure commitment.
 - **[docs/decisions.md](docs/decisions.md)** — the decision record: what we chose, why, and what we rejected.
+- **[docs/roadmap.md](docs/roadmap.md)** — tracked future work and deferrals, each with its rationale and gate.
 - **[docs/x402-protocol-notes.md](docs/x402-protocol-notes.md)** — the x402 protocol facts a guard depends on, verified against source.
 - **[docs/prior-art.md](docs/prior-art.md)** — existing x402 guards, read at the source level, credited and compared.
 
