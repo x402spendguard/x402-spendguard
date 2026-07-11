@@ -12,7 +12,17 @@
   },
   "devDependencies": {
     "@types/node": "^20.19.43",
+    "@x402/core": "^2.18.0",
+    "@x402/evm": "^2.18.0",
     "typescript": "^5.4.0",
     "vitest": "^1.6.0"
+  },
+  "peerDependencies": {
+    "@x402/core": "^2.18.0",
+    "@x402/evm": "^2.18.0"
+  },
+  "peerDependenciesMeta": {
+    "@x402/core": { "optional": true },
+    "@x402/evm": { "optional": true }
   }
 }

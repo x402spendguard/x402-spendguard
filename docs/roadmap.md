@@ -9,11 +9,17 @@ Convention: each item names its **gate** (what must be true before it ships) and
 
 ## Next slices (near term)
 
-- **SDK adapter — the drop-in integration.** DOM-01 origin derivation (from the client-observed
-  request, never a server field), v1/v2 wire parsing, interposition at the payment-creation hook /
-  signer wrap, the ASM3 challenge↔struct correlation, and the L4 brand-runtime invariant at the
-  composition root. This is the slice that turns the core into something you install. (THREAT_MODEL
-  ASM3; REQUIREMENTS DOM-01.)
+- **SDK adapter — the drop-in integration.** **v2 path DONE** (D-026): wire normalization, the
+  signer-wrap veto core, transport-capture for honest DOM-01, and the `createSpendGuardBinding`
+  drop-in, all against verified `@x402/core@2.18.0`. **Remaining:** the **v1 wire path** (deprecated
+  but deployed — `maxAmountRequired` + loose network strings, two divergent v1 schemas), and
+  **live-flow integration testing** against a testnet/facilitator (not unit-testable in-repo).
+  (THREAT_MODEL ASM3; REQUIREMENTS DOM-01.)
+
+- **Dev-tooling vulnerabilities.** `npm audit` flags a critical/high/moderate in the
+  `vitest`/`vite`/`esbuild` dev tree (dev-server / UI-server issues) — **dev-only, not shipped**
+  (runtime `npm audit --omit=dev` = 0). Fix = upgrade `vitest` to 4.x (a breaking change); evaluate
+  and do it deliberately. Not blocking; surfaced when `@x402` was added (which itself added none).
 
 - **Verifiable audit log.** Bundle three related audit-integrity items into one slice, because they
   solve the same problem — *can a reader trust this trail wasn't truncated or forged?*
