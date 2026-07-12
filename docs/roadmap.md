@@ -29,21 +29,16 @@ Convention: each item names its **gate** (what must be true before it ships) and
   check compares the challenge by reference, so a re-parsed-equal challenge re-observed before
   `consume` fails closed (the safe direction) rather than being treated as idempotent — leave as is.
 
-- **Live e2e harness — DENY PATH DONE (D-028); funded settle path remains.** The deny-path
-  milestone shipped: the real `@x402` client (both generations) driven through a genuine 402 over
-  localhost, with our binding installed, blocks a bad payment and reaches a signature **only** via
-  the wrapped `signTypedData` (Finding A, in the wild) — asserted with a canary signer, so **no key
-  and no funds** are involved. Lives in `test/e2e/` (never imported by `src/`, no-egress proof
-  intact), opt-in `npm run test:e2e` + a separate CI job, never the green-main gate; `.env*`
-  gitignored except `.env.example`. **Remaining — the funded settle path:** one *policy-compliant*
-  micro-payment that actually settles on a testnet facilitator (base-sepolia), proving the happy
-  path end-to-end. This is the only part that moves value: it needs a **funded testnet wallet**
-  (key from the untracked `.env`) and stays out of automated CI. **Route-completeness criterion
-  (Opus, D-028) is now DISCHARGED by D-029** — a real viem `LocalAccount` is driven through the
-  wrap in the default gate (no un-blocked signing route) and through the real client on ALLOW (not
-  over-restricted), both without funds. So this milestone is now purely **live settlement**: one
-  policy-compliant payment verified+settled against a real facilitator. **Until it exists, do not
-  place this in front of a funded wallet.** (D-028, D-029; THREAT_MODEL ASM3.)
+- **Live e2e harness — DONE (D-028 deny path, D-029 route-completeness, D-030 funded settle).**
+  Deny path: the real `@x402` client (both generations) driven through a genuine 402 over localhost,
+  blocking a bad payment and reaching a signature **only** via the wrapped `signTypedData` (canary
+  signer, no funds). Funded path: **validated live** — a compliant payment settled 0.01 USDC on Base
+  Sepolia (tx `0x3231d02f…d1316c`), guard-allowed + recorded, real `LocalAccount` signing through
+  the allowlist wrap, `x402.org` facilitator verify+settle (gasless payer). The funded test
+  **self-skips** without `TESTNET_PRIVATE_KEY` so `npm test`/CI stay hermetic; opt-in via
+  `npm run test:e2e:funded`. Runbook: `test/e2e/FUNDED.md`. Lives in `test/e2e/` (never imported by
+  `src/`, no-egress proof intact); `.env*` gitignored except `.env.example`. **The whole adapter arc
+  (D-026→D-030) is now proven end-to-end on real hardware.** (THREAT_MODEL ASM3.)
 
 - **Read APIs for dashboard integration — pull, not push.** Surface what the guard captures so
   others can build their own dashboard tech, WITHOUT the guard ever egressing. The distinction:

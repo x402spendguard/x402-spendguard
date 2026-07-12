@@ -8,8 +8,12 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["test/e2e/**/*.e2e.test.ts"],
-    // A real HTTP round-trip + client handshake is slower than a pure unit test.
-    testTimeout: 20_000,
-    hookTimeout: 20_000,
+    // Reads test/e2e/.env (if present) into process.env before the test modules — the FUNDED
+    // settle test reads a testnet key from there and self-skips when it's absent.
+    setupFiles: ["./test/e2e/load-env.ts"],
+    // A real HTTP round-trip + client handshake is slower than a pure unit test; the funded
+    // settle test additionally waits on a live facilitator + on-chain settlement.
+    testTimeout: 90_000,
+    hookTimeout: 30_000,
   },
 });

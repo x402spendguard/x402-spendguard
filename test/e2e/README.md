@@ -35,9 +35,18 @@ It lives under `test/e2e/` (never imported by `src/`), so the static no-egress p
 is untouched, and it runs in its own vitest config + a separate CI job — **never** the default
 `npm test` green-main gate.
 
-## What's deferred: the funded settle path
+## The funded settle path (opt-in, real value)
 
-The one thing this can't prove without value moving: a **policy-compliant** payment actually
-settling on a testnet facilitator. That needs a funded base-sepolia wallet and is the next
-milestone. It will read a key from an **untracked `.env`** (see [`.env.example`](./.env.example));
-a real key is **never** committed. Until it exists, do not place this in front of a funded wallet.
+The one thing the deny path can't prove without value moving: a **policy-compliant** payment
+actually settling on a testnet facilitator. That test now exists —
+[`funded-settle.e2e.test.ts`](./funded-settle.e2e.test.ts) — and **self-skips** unless you provide a
+funded base-sepolia key, so this suite and CI stay hermetic. It reads the key from an **untracked
+`.env`** (see [`.env.example`](./.env.example)); a real key is **never** committed.
+
+```
+npm run test:e2e:funded      # skips unless TESTNET_PRIVATE_KEY is set
+```
+
+**Full runbook — provisioning a throwaway wallet, faucet USDC (no ETH needed), and running it: see
+[FUNDED.md](./FUNDED.md).** Until you've run it green against a real facilitator, do not place this
+in front of a wallet you care about.
