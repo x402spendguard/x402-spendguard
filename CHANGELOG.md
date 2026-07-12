@@ -5,6 +5,43 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). **This project is in `0.x` and is NOT
 stable — anything may change until `1.0.0` is earned.**
 
+## [0.1.3] — 2026-07-13
+
+The adapter is now **proven end to end on testnet**: the guard installs in front of a real
+x402 client, blocks a bad payment, and lets a compliant one settle on-chain — validated live
+on Base Sepolia. Both x402 generations, and a hardened veto. Still pre-alpha, still testnet.
+
+### Added
+- **x402 v1 wire path.** The adapter now speaks **both** x402 generations. The same guard, one
+  payment hook, dispatched on the protocol version — v1's legacy shape (`maxAmountRequired`,
+  loose network names like `base-sepolia`) is normalized to the same trustworthy challenge the
+  v2 path uses. An unknown v1 network fails closed. (A bonus falls out: because the guard binds
+  `value == amount`, it denies the v1 overpayment vector the ecosystem otherwise waves through.)
+- **Live-flow end-to-end tests** (`test/e2e/`, opt-in — never part of the default test run).
+  - **Deny path** drives a *real* `@x402` client through a genuine 402 and proves the guard
+    blocks kill-switch / off-allowlist / over-cap payments — on both generations — reaching a
+    signature **only** through the guarded route. Hermetic: no key, no funds.
+  - **Funded settle** proves a *compliant* payment actually settles: a real funded signer signs
+    through the guard, and a real facilitator verifies and settles it on Base Sepolia. Validated
+    live (0.01 USDC, on-chain tx). It **self-skips** unless you provide a testnet key, so the
+    default suite and CI never move funds. Runbook: [`test/e2e/FUNDED.md`](test/e2e/FUNDED.md).
+
+### Security
+- **Signer wrap hardened from a blocklist to an allowlist.** The guard's signer wrap now exposes
+  a *curated* surface — the guarded `signTypedData` plus named non-signing reads — instead of
+  passing the inner signer through and blocking the routes it knew about. This closed a real
+  leak: a standard wallet account (viem `LocalAccount`) exposes a signing method
+  (`signAuthorization`) the old blocklist didn't cover, which was reachable unguarded. Now every
+  alternate signing route — present or future — is absent by construction, so the wrap is
+  structurally the **sole** path to a signature. Verified against a real account in the default
+  test suite.
+
+### Notes
+- **Testnet, single-agent, single-flow.** This validates the guard is correctly positioned in a
+  real settlement flow. It does not cover cumulative spend across concurrent flows, non-EVM
+  chains, the `upto` scheme, or mainnet — all still explicitly out of scope. Zero runtime
+  dependencies remains true; `@x402` stays an optional peer dependency.
+
 ## [0.1.2] — 2026-07-11
 
 The **drop-in SDK adapter** for x402 v2 — the guard now installs in front of a real x402
