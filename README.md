@@ -78,11 +78,31 @@ Read the code. That has always been the deal with a guard.
 
 ## Status
 
-Pre-alpha. Core policy engine + tests only. The core is being brought into line with the threat model (see REQUIREMENTS.md); payment-interception adapters for the x402 client SDKs are a later slice.
+**`v0.1.3` — the drop-in adapter is here, and proven end to end on testnet.** The guard is no longer just a core library: it installs in front of a real `@x402` client and enforces at the moment a payment is signed. What's proven, on live infrastructure:
+
+- **Both x402 generations** (v1 and v2) — one guard, dispatched on the protocol version.
+- **Deny works in the wild** — a real `@x402` client driven through a genuine 402 is blocked on kill-switch / off-allowlist / over-cap, and reaches a signature *only* through the guarded route.
+- **Allow settles** — a policy-compliant payment, signed through the guard, is verified and settled **on-chain** by a real facilitator. Validated live on **Base Sepolia** (real USDC, real transaction) — and reproducible: run it yourself with a throwaway key and faucet USDC ([`test/e2e/FUNDED.md`](test/e2e/FUNDED.md)).
+- **The veto is the sole path to a signature** — the signer wrap is an *allowlist*, so no alternate signing method (present or future) can route around it.
+
+Still **pre-alpha and testnet only**: single-agent, single-flow, not yet published to npm, and the single-process caveat above (ACCT-05) stands. **Not for mainnet.** Zero runtime dependencies; `@x402` is an optional peer dependency.
+
+### Wiring it in (the shape)
+
+The guard interposes at the three points an x402 client exposes, through one binding — the veto happens at the signer, where the *real* struct about to be signed is visible:
+
+```ts
+const binding = createSpendGuardBinding(guard);              // guard = your policy + spend store
+registerExactEvmScheme(client, { signer: binding.wrapSigner(signer) }); // veto at signing
+client.onBeforePaymentCreation(binding.hook);                // capture the offer
+const guardedFetch = binding.wrapFetch(globalThis.fetch);    // capture the real request origin
+```
+
+A complete, runnable example — both the hermetic deny path and a live funded settle — is in [`test/e2e/`](test/e2e/).
 
 ```bash
 npm install
-npm test
+npm test          # the hermetic suite (no network, no funds)
 ```
 
 ## License
