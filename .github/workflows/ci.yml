@@ -31,4 +31,9 @@ jobs:
           node-version: "20"
           cache: npm
       - run: npm ci
+      # SMOKE_TEETH=1 turns on the cross-process teeth case (a deliberately non-atomic store must
+      # OVER-allow) so the honesty gate's non-vacuousness is machine-verified here, not just by a
+      # reviewer once. The test carries retry:3 to absorb cross-process scheduling jitter.
       - run: npm run test:e2e
+        env:
+          SMOKE_TEETH: "1"

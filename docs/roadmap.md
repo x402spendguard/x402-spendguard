@@ -78,8 +78,14 @@ Convention: each item names its **gate** (what must be true before it ships) and
   fail-closed read-retry. The guard runs a bounded CAS retry loop that re-evaluates on conflict and
   denies on exhaustion. Unifies ACCT-02 + ACCT-05 (one mechanism, two scopes) and closes the ASM6
   silent fail-open (refuse loud). Chosen over single-owner/lock/external via the tier lens (D-031).
-  **Remaining follow-up (small):** a genuine **two-process / two-host** smoke test on a real target
-  FS before softening the README's "one instance per wallet" all the way (Opus's honesty gate).
+  **Validated (D-032):** a genuine **multi-process** smoke test (`cross-process-smoke.e2e.test.ts`)
+  spawns N real OS processes racing on one `FileSpendStore`; against a cap admitting exactly M
+  payments they admit exactly M and the ledger records every one (no lost updates). A teeth case
+  (the same harness on a non-CAS store must OVER-allow) proves the gate isn't vacuous and is
+  **CI-verified** (`e2e` job sets `SMOKE_TEETH=1`, `retry: 3` absorbs scheduling jitter). This retires the README's
+  "one instance per wallet" hedge **for the same-host case**. **Multi-*host* is a separate item:**
+  it needs a networked FS (which the store refuses) → an external CAS store adapter, not a shared
+  file — folds into the store-adapters line, not a file-store gap.
 
 - **L2 — ledger-file permission check.** The decision log is now created `0o600` (D-025 F2); the
   symmetric world-writable check on the `FileSpendStore` ledger is still owed — a one-line mirror of
