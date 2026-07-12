@@ -286,3 +286,19 @@ We follow **parse, don't validate**: untrusted input is converted into a trustwo
 
 Post-fix: 26 adapter tests, 94 total green, tsc clean, runtime deps still 0. Held for Opus's re-review of the new signer surface.
 **Serial-flow assumption:** one payment flow at a time per context. Interleaved concurrent flows can mis-correlate; a mismatch fails closed via the binding checks, but per-domain attribution assumes serial use — documented, like one-instance-per-wallet.
+
+### D-027 — v1 wire path: one hook, dispatch on `x402Version`
+**2026-07-12 · Accepted**
+
+**Context.** The v1 wire path (deprecated but deployed) was the remaining half of D-026. Source verification of `@x402/core`+`@x402/evm@2.18.0` reshaped it to be *far* smaller than the roadmap assumed, and corrected a stale premise:
+- The roadmap's "v1 has no confirmation hook" is true of the **legacy** `x402`/`x402-fetch@1.2.0` SDK, but the **current** `@x402/core` client ships `ExactEvmSchemeV1` and **fires `onBeforePaymentCreation` for BOTH generations** (the hook loop in `createPaymentPayload` runs before scheme dispatch, regardless of version). v1 also signs through the **same** `ClientEvmSigner.signTypedData`.
+- ⇒ The **signer-wrap veto and transport capture are already generation-agnostic.** Only the *challenge shape* differs: v1 uses `maxAmountRequired` (not `amount`), keeps `resource` on the offer (v2 hoists it to the body), and gives a **loose network name** ("base-sepolia") instead of CAIP-2.
+
+**Decision.**
+- **Dispatch on the authoritative discriminator `ctx.paymentRequired.x402Version`** (`1 | 2`, a Zod literal) — NOT fragile field-sniffing (`amount` vs `maxAmountRequired`). One hook (`challengeCaptureHook`) handles both generations; an unknown version aborts (`adapter.unsupported_x402_version`), fail-closed.
+- **`challengeFromV1`** resolves the loose network name to CAIP-2 via a table **mirrored verbatim from `@x402/evm`'s `EVM_NETWORK_CHAIN_ID_MAP`** — a protocol fact, not policy (POL-01 holds: it's a fixed ecosystem lookup, not a threshold the guard chooses). An **unknown name fails closed** (`wire.unknown_v1_network`): with no chain id we cannot key caps/allowlist or cross-check the signed struct's `chainId`. The table is null-prototype + `Object.hasOwn`-guarded so a `network` of `"toString"`/`"constructor"` cannot resolve. Then it hands off to the same `parseChallenge` boundary (which already accepted `maxAmountRequired`), so v1 and v2 converge on one parser.
+- **Bonus security property:** the v1 ecosystem accepts `value >= maxAmountRequired` (overpay verifies cleanly at the facilitator), but our binding check is `value == amount` — so the guard **denies the documented v1 overpay/drain vector** the facilitator waves through.
+
+**Built (this slice):** `challengeFromV1` + `V1Offer` + the network table in `x402-wire.ts`; `x402Version` dispatch in `x402-binding.ts` (structural `PaymentCreationContextLike` widened to the union of both offer shapes; the assignability test against the real `@x402/core` types still holds). 8 new tests (13 wire, 7 binding), **102 total green**, tsc clean, runtime deps still 0, no-egress static test intact.
+
+**Still not live.** This is wire normalization + dispatch, unit-tested against fixtures. True v1 (and v2) live-flow validation against a testnet/facilitator remains the **live-testnet harness** gate before any funded wallet.

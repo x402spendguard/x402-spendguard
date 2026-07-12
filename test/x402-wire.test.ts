@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { authorizationFromTypedData, challengeFromV2 } from "../src/adapters/x402-wire.js";
+import { authorizationFromTypedData, challengeFromV2, challengeFromV1 } from "../src/adapters/x402-wire.js";
 import { USDC, PAYEE, CHAIN, NOW } from "./helpers.js";
 
 // A payer (our own wallet) — deliberately NOT logged/kept elsewhere, but present on the struct.
@@ -106,6 +106,71 @@ describe("x402 wire → Challenge (from the v2 offer + top-level resource)", () 
 
   it("fails closed on a malformed amount", () => {
     const r = challengeFromV2(paymentRequired(), offer({ amount: "1.5" }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("parse.amount_malformed");
+  });
+});
+
+// v1 (deprecated but deployed): the SAME @x402/core client speaks v1 through the same signer
+// and the same onBeforePaymentCreation hook — ONLY the offer shape differs. `maxAmountRequired`
+// (not `amount`), `resource` on the offer (v2 hoists it to the body), and a LOOSE network name
+// ("base-sepolia") we must map to CAIP-2 via the authoritative @x402/evm table. Unknown network
+// fails closed — we cannot key caps/allowlist or cross-check the struct's chainId without it.
+const v1Offer = (over: Record<string, unknown> = {}) => ({
+  scheme: "exact",
+  network: "base", // loose v1 name, not "eip155:8453"
+  maxAmountRequired: "500000", // v1 field name (v2 renamed to `amount`)
+  asset: USDC,
+  payTo: PAYEE,
+  maxTimeoutSeconds: 600,
+  resource: "https://weather.example/forecast", // on the offer in v1 (not hoisted)
+  extra: { name: "USD Coin", version: "2" },
+  ...over,
+});
+
+describe("x402 wire → Challenge (v1 offer)", () => {
+  it("maps a v1 offer (maxAmountRequired, loose network, offer-level resource) to a branded Challenge", () => {
+    const r = challengeFromV1(v1Offer());
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.scheme).toBe("exact");
+      expect(r.value.network).toBe(CHAIN); // "base" → "eip155:8453"
+      expect(r.value.asset).toBe(USDC);
+      expect(r.value.payTo).toBe(PAYEE);
+      expect(r.value.amount).toBe(500_000n); // from maxAmountRequired
+      expect(r.value.maxTimeoutSeconds).toBe(600n);
+      expect(r.value.resource).toBe("https://weather.example/forecast");
+    }
+  });
+
+  it("maps the testnet network name base-sepolia → eip155:84532 (the live-harness target)", () => {
+    const r = challengeFromV1(v1Offer({ network: "base-sepolia" }));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.network).toBe("eip155:84532");
+  });
+
+  it("fails closed on an unknown v1 network name (cannot key caps or cross-check chainId)", () => {
+    const r = challengeFromV1(v1Offer({ network: "base-goerli" }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("wire.unknown_v1_network");
+  });
+
+  it("does not resolve a network name via the prototype chain (Object.hasOwn guard)", () => {
+    for (const evil of ["toString", "constructor", "__proto__", "hasOwnProperty"]) {
+      const r = challengeFromV1(v1Offer({ network: evil }));
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toBe("wire.unknown_v1_network");
+    }
+  });
+
+  it("rejects a non-exact scheme (bubbles up from the parse boundary)", () => {
+    const r = challengeFromV1(v1Offer({ scheme: "upto" }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("scheme.unsupported");
+  });
+
+  it("fails closed on a malformed maxAmountRequired", () => {
+    const r = challengeFromV1(v1Offer({ maxAmountRequired: "1.5" }));
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe("parse.amount_malformed");
   });

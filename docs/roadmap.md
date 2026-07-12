@@ -9,13 +9,14 @@ Convention: each item names its **gate** (what must be true before it ships) and
 
 ## Next slices (near term)
 
-- **SDK adapter — the drop-in integration.** **v2 path DONE** (D-026): wire normalization, the
-  signer-wrap veto core, transport-capture for honest DOM-01, and the `createSpendGuardBinding`
-  drop-in, all against verified `@x402/core@2.18.0`. **Remaining:** the **v1 wire path** (deprecated
-  but deployed — `maxAmountRequired` + loose network strings, two divergent v1 schemas), and
-  **live-flow integration testing** against a testnet/facilitator (not unit-testable in-repo).
-  The live harness should specifically confirm the real x402 client reaches a signature *only*
-  through the wrapped `signTypedData` and no other route (Finding A, in the wild).
+- **SDK adapter — the drop-in integration.** **v2 + v1 wire paths DONE** (D-026, D-027): wire
+  normalization for both generations, the signer-wrap veto core, transport-capture for honest
+  DOM-01, and the `createSpendGuardBinding` drop-in, all against verified `@x402/core@2.18.0`. The
+  v1 path proved small once source-verified — the current `@x402/core` client fires
+  `onBeforePaymentCreation` and signs via the same `signTypedData` for BOTH generations, so one
+  hook dispatches on `x402Version` and only the challenge shape (loose network name,
+  `maxAmountRequired`, offer-level resource) differs. **Remaining:** **live-flow integration
+  testing** against a testnet/facilitator (not unit-testable in-repo) — the harness below.
   (THREAT_MODEL ASM3; REQUIREMENTS DOM-01.)
 
 - **Adapter veto hardening — blocklist → allowlist (post-review residual, non-blocking).** The
@@ -30,7 +31,9 @@ Convention: each item names its **gate** (what must be true before it ships) and
 - **Live testnet end-to-end harness — the top gate before any funded wallet.** Prove the real
   `@x402` client + a real signer + our binding actually blocks a bad payment against a live
   facilitator, and specifically that the SDK reaches a signature **only** through the wrapped
-  `signTypedData` and no other route (Finding A, in the wild). Publish it in-repo, with guardrails:
+  `signTypedData` and no other route (Finding A, in the wild). Exercise **both wire generations**
+  now that v1 is wired (D-027) — base-sepolia is a v1-capable testnet target. Publish it in-repo,
+  with guardrails:
   **no secrets committed** (testnet-only wallet key from an untracked `.env`; ship a `.env.example`
   + setup docs); it lives **outside `src/`** (`test/e2e/` or `examples/`) because it makes real
   outbound calls — the core's provable no-egress guarantee must stay intact; **CI-gated** (opt-in

@@ -10,6 +10,12 @@
 //    `verifyingContract` live in the DOMAIN (not the message), so we read them there.
 //  - The v2 offer (PaymentRequirements) carries no `resource`; it is hoisted to the 402
 //    body's top-level `resource: {url}`. We take the resource from the body ONLY.
+//
+// v1 (deprecated but deployed), verified @ 2.18.0: the SAME `@x402/core` client speaks v1
+// through the SAME signer wrap and the SAME `onBeforePaymentCreation` hook — only the offer
+// SHAPE differs. `maxAmountRequired` (v2 renamed it `amount`), `resource` sits ON the offer
+// (v1 does not hoist it), and `network` is a LOOSE NAME ("base-sepolia") we must map to CAIP-2
+// via the authoritative `@x402/evm` table. An unknown name fails closed (see `challengeFromV1`).
 
 import { parseAuthorization, parseChallenge } from "../parse.js";
 import type { Result } from "../parse.js";
@@ -35,10 +41,59 @@ export interface V2Offer {
   extra?: unknown;
 }
 
-/** The v2 402 body, of which the guard needs the top-level resource info. */
+/** The 402 body as seen at the payment hook. `x402Version` is the authoritative generation
+ *  discriminator (`1 | 2`); v2 hoists the resource here (`resource.url`), v1 does not. */
 export interface V2PaymentRequired {
+  x402Version?: unknown;
   resource?: { url?: unknown } | null;
 }
+
+/** The fields of a v1 PaymentRequirements (the selected offer) the guard reads. As with
+ *  `V2Offer` these are `unknown` on purpose — untrusted server data validated by `parseChallenge`.
+ *  Differs from v2: `maxAmountRequired` (not `amount`), a loose `network` name, and `resource`
+ *  carried on the offer itself. */
+export interface V1Offer {
+  scheme?: unknown;
+  network?: unknown;
+  maxAmountRequired?: unknown;
+  asset?: unknown;
+  payTo?: unknown;
+  maxTimeoutSeconds?: unknown;
+  resource?: unknown;
+  extra?: unknown;
+}
+
+/**
+ * Authoritative v1 legacy network-name → EVM chain id, mirrored verbatim from
+ * `@x402/evm`'s `EVM_NETWORK_CHAIN_ID_MAP` (2.18.0; `getEvmChainIdV1` throws on unknown). This
+ * is a PROTOCOL FACT, not policy — a fixed lookup table the ecosystem defines, not a threshold
+ * the guard chooses. An unknown name has no safe default: without a chain id we cannot key caps
+ * or the allowlist, nor cross-check the signed struct's `chainId`, so `challengeFromV1` denies.
+ * Null-prototype + `Object.hasOwn` so a `network` of "toString"/"constructor" cannot resolve.
+ */
+const V1_NETWORK_CHAIN_ID: Record<string, number> = Object.assign(Object.create(null), {
+  ethereum: 1,
+  sepolia: 11155111,
+  abstract: 2741,
+  "abstract-testnet": 11124,
+  "base-sepolia": 84532,
+  base: 8453,
+  "avalanche-fuji": 43113,
+  avalanche: 43114,
+  iotex: 4689,
+  sei: 1329,
+  "sei-testnet": 1328,
+  polygon: 137,
+  "polygon-amoy": 80002,
+  peaq: 3338,
+  story: 1514,
+  educhain: 41923,
+  "skale-base-sepolia": 324705682,
+  megaeth: 4326,
+  monad: 143,
+  stable: 988,
+  "stable-testnet": 2201,
+});
 
 /**
  * SDK objects use JS `number` for small integers (e.g. `maxTimeoutSeconds`, EIP-712
@@ -104,5 +159,32 @@ export function challengeFromV2(paymentRequired: V2PaymentRequired, offer: V2Off
     amount: offer.amount,
     maxTimeoutSeconds: intToDecimalString(offer.maxTimeoutSeconds),
     resource: typeof url === "string" ? url : "",
+  });
+}
+
+/**
+ * Map a v1 selected offer to a branded `Challenge`. Two things differ from v2: the loose
+ * `network` NAME is resolved to CAIP-2 via the authoritative table (unknown ⇒ fail closed,
+ * `wire.unknown_v1_network`), and the amount comes from `maxAmountRequired`, the resource
+ * from the offer itself. Everything else flows through the same `parseChallenge` boundary
+ * (which already accepts `maxAmountRequired`), so the v1 and v2 paths converge on one parser.
+ */
+export function challengeFromV1(offer: V1Offer): Result<Challenge> {
+  const name = offer.network;
+  if (typeof name !== "string" || !Object.hasOwn(V1_NETWORK_CHAIN_ID, name)) {
+    return {
+      ok: false,
+      reason: "wire.unknown_v1_network",
+      detail: `v1 network "${String(name)}" is not a known EVM network (no CAIP-2 mapping; cannot key caps or cross-check the signed chainId).`,
+    };
+  }
+  return parseChallenge({
+    scheme: offer.scheme,
+    network: `eip155:${V1_NETWORK_CHAIN_ID[name]}`,
+    asset: offer.asset,
+    payTo: offer.payTo,
+    maxAmountRequired: offer.maxAmountRequired,
+    maxTimeoutSeconds: intToDecimalString(offer.maxTimeoutSeconds),
+    resource: typeof offer.resource === "string" ? offer.resource : "",
   });
 }

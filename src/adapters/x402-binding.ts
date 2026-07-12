@@ -6,15 +6,17 @@
 // `src/` stays free of any `@x402` import: the hook/context shapes are declared STRUCTURALLY
 // here (verified against @x402/core 2.18.0). A test asserts these are assignable to the real
 // @x402 types, so drift is caught without coupling the guard to the SDK at build time.
-import { challengeFromV2, type V2Offer, type V2PaymentRequired } from "./x402-wire.js";
+import { challengeFromV2, challengeFromV1, type V1Offer, type V2Offer, type V2PaymentRequired } from "./x402-wire.js";
 import { PaymentFlowContext, guardedSigner, type ClientEvmSigner } from "./x402-guarded-signer.js";
 import { guardedFetch, type FetchLike, type ResponseLike } from "./x402-transport.js";
 import type { Authorizer } from "../audit/decision-log.js";
 
-/** Structural match of @x402/core's `PaymentCreationContext` (2.18.0). */
+/** Structural match of @x402/core's `PaymentCreationContext` (2.18.0). `selectedRequirements`
+ *  is the union of both generations' offer shapes — `x402Version` on `paymentRequired` selects
+ *  which fields the hook reads (v1: `maxAmountRequired` + loose network; v2: `amount` + CAIP-2). */
 export interface PaymentCreationContextLike {
   paymentRequired: V2PaymentRequired;
-  selectedRequirements: V2Offer;
+  selectedRequirements: V1Offer & V2Offer;
 }
 
 /** Structural match of @x402/core's `BeforePaymentCreationHook`. */
@@ -23,14 +25,24 @@ export type BeforePaymentCreationHookLike = (
 ) => Promise<void | { abort: true; reason: string }>;
 
 /**
- * A payment hook that captures the challenge (offer + 402 body) into the flow context. On an
- * unsupported/malformed offer it aborts early with a clean reason; otherwise it records the
- * challenge and returns void so the flow proceeds to signing, where the guarded signer makes
- * the real, fully-correlated decision.
+ * A payment hook that captures the challenge (offer + 402 body) into the flow context. The
+ * `@x402/core` client fires this hook for BOTH generations (verified 2.18.0), so it dispatches
+ * on the authoritative `x402Version` discriminator — v2 takes the resource from the hoisted body,
+ * v1 from the offer and maps its loose network name. An unsupported/malformed offer OR an unknown
+ * version aborts early with a clean reason; otherwise it records the challenge and returns void so
+ * the flow proceeds to signing, where the guarded signer makes the real, fully-correlated decision.
  */
 export function challengeCaptureHook(context: PaymentFlowContext): BeforePaymentCreationHookLike {
   return async (ctx) => {
-    const challenge = challengeFromV2(ctx.paymentRequired, ctx.selectedRequirements);
+    const version = ctx.paymentRequired?.x402Version;
+    let challenge;
+    if (version === 2) {
+      challenge = challengeFromV2(ctx.paymentRequired, ctx.selectedRequirements);
+    } else if (version === 1) {
+      challenge = challengeFromV1(ctx.selectedRequirements);
+    } else {
+      return { abort: true, reason: "adapter.unsupported_x402_version" };
+    }
     if (!challenge.ok) return { abort: true, reason: challenge.reason };
     context.observeChallenge(challenge.value);
   };

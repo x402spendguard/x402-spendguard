@@ -47,6 +47,25 @@ describe("challengeCaptureHook", () => {
     const result = await challengeCaptureHook(ctx)(bad);
     expect(result).toEqual({ abort: true, reason: "scheme.unsupported" });
   });
+
+  it("dispatches on x402Version: a v1 body + v1 offer normalizes through the v1 wire path", async () => {
+    // v1: x402Version 1, resource on the offer (not hoisted), maxAmountRequired, loose network.
+    const ctx = new PaymentFlowContext();
+    const v1Offer = { scheme: "exact", network: "base", maxAmountRequired: "500000", asset: USDC, payTo: PAYEE, maxTimeoutSeconds: 600, resource: "https://weather.example/forecast", extra: { name: "USD Coin", version: "2" } };
+    const v1Body = { x402Version: 1, accepts: [v1Offer] };
+    const result = await challengeCaptureHook(ctx)({ paymentRequired: v1Body, selectedRequirements: v1Offer });
+    expect(result).toBeUndefined();
+    ctx.observeOrigin("weather.example" as never);
+    const captured = ctx.consume().challenge;
+    expect(captured.amount).toBe(500_000n); // from maxAmountRequired
+    expect(captured.network).toBe("eip155:8453"); // "base" → CAIP-2
+  });
+
+  it("aborts on an unknown x402Version (fail-closed)", async () => {
+    const ctx = new PaymentFlowContext();
+    const result = await challengeCaptureHook(ctx)({ paymentRequired: { ...paymentRequired(), x402Version: 3 }, selectedRequirements: offer() });
+    expect(result).toEqual({ abort: true, reason: "adapter.unsupported_x402_version" });
+  });
 });
 
 describe("createSpendGuardBinding — the full correlated flow", () => {
