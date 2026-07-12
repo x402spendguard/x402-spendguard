@@ -19,17 +19,15 @@ Convention: each item names its **gate** (what must be true before it ships) and
   testing** against a testnet/facilitator (not unit-testable in-repo) — the harness below.
   (THREAT_MODEL ASM3; REQUIREMENTS DOM-01.)
 
-- **Adapter veto hardening — blocklist → allowlist (post-review residual, non-blocking).** The
-  signer wrap spreads the inner signer, then overrides the three known signing methods
-  (`sign`/`signMessage`/`signTransaction`) to fail closed — covering every route to the EIP-3009
-  signature *today*, but a *future* viem/SDK signing method would be re-exposed by the spread. The
-  durable pattern is an **allowlist**: return only `address` + the guarded `signTypedData` +
-  explicitly-named non-signing methods. (Opus, D-026.) **This residual is invisible to the
-  deny-path e2e harness by construction** (its canary exposes only 4 methods) — the *only* test
-  that will force it is the funded-settle milestone's real-`LocalAccount` acceptance criterion
-  (D-028). Do the allowlist refactor with that test in hand. *Minor, related:* the interleave check
-  compares the challenge by reference, so a re-parsed-equal challenge re-observed before `consume`
-  fails closed (the safe direction) rather than being treated as idempotent.
+- **Adapter veto hardening — blocklist → allowlist. DONE (D-029).** `guardedSigner` now exposes a
+  curated allowlist (guarded `signTypedData` + non-signing passthroughs), not a spread of the inner
+  signer — so present-and-future alternate signing routes are absent, not an enumerated blocked
+  subset. This closed a **demonstrated** leak: a real viem `LocalAccount`'s `signAuthorization`
+  (EIP-7702) was passing through the old spread unguarded. Proven both directions in the default
+  gate (a real `LocalAccount`: no un-blocked route by reference + keys ⊆ allowlist; and an e2e
+  ALLOW proving the curated surface still satisfies the real SDK). *Residual, minor:* the interleave
+  check compares the challenge by reference, so a re-parsed-equal challenge re-observed before
+  `consume` fails closed (the safe direction) rather than being treated as idempotent — leave as is.
 
 - **Live e2e harness — DENY PATH DONE (D-028); funded settle path remains.** The deny-path
   milestone shipped: the real `@x402` client (both generations) driven through a genuine 402 over
@@ -40,12 +38,12 @@ Convention: each item names its **gate** (what must be true before it ships) and
   gitignored except `.env.example`. **Remaining — the funded settle path:** one *policy-compliant*
   micro-payment that actually settles on a testnet facilitator (base-sepolia), proving the happy
   path end-to-end. This is the only part that moves value: it needs a **funded testnet wallet**
-  (key from the untracked `.env`) and stays out of automated CI. **Acceptance criterion (Opus,
-  D-028):** it MUST drive a **real viem `LocalAccount`** (not the 4-method canary) and assert **no
-  un-blocked signing route** across its full method surface — this is the ONLY test that will ever
-  exercise the blocklist→allowlist residual against a real signer, so it is a hard requirement of
-  this milestone, not a comment. **Until it exists, do not place this in front of a funded wallet.**
-  (D-028; THREAT_MODEL ASM3.)
+  (key from the untracked `.env`) and stays out of automated CI. **Route-completeness criterion
+  (Opus, D-028) is now DISCHARGED by D-029** — a real viem `LocalAccount` is driven through the
+  wrap in the default gate (no un-blocked signing route) and through the real client on ALLOW (not
+  over-restricted), both without funds. So this milestone is now purely **live settlement**: one
+  policy-compliant payment verified+settled against a real facilitator. **Until it exists, do not
+  place this in front of a funded wallet.** (D-028, D-029; THREAT_MODEL ASM3.)
 
 - **Read APIs for dashboard integration — pull, not push.** Surface what the guard captures so
   others can build their own dashboard tech, WITHOUT the guard ever egressing. The distinction:

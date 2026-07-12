@@ -2,9 +2,10 @@
 // client's EVM signer so that `signTypedData` runs the guard FIRST and only reaches the real
 // signer on an allow. It is the last gate before a signature exists, and it works on both x402
 // generations (see the ground-truth notes). Crucially, because the SAME EIP-712 digest can be
-// produced by other signing methods (`sign`/`signMessage`/`signTransaction`), the wrap closes
-// EVERY signing route on the returned object — not just `signTypedData` (Finding A). Otherwise
-// the veto would be one `wrapped.sign(...)` call away from silent bypass on its own object.
+// produced by ANY signing route the signer exposes, the wrap must be the SOLE path to a
+// signature: `guardedSigner` returns an ALLOWLIST of the signer surface (guarded `signTypedData`
+// + non-signing reads), never a spread of the inner object — so present and future alternate
+// signing routes (`sign`, `signAuthorization`, …) are absent, not merely a blocked subset.
 //
 // The signer sees only the EIP-712 struct — not the request origin, not the offer. So the
 // full evaluation is CORRELATED here from three sources captured across one payment flow:
@@ -36,8 +37,8 @@ export class PaymentBlockedError extends Error {
   }
 }
 
-/** The x402 EVM signer surface we wrap (a viem LocalAccount satisfies it). Extra methods on a
- *  concrete signer are preserved by `guardedSigner` via spread. */
+/** The x402 EVM signer surface we wrap (a viem LocalAccount satisfies it). `guardedSigner`
+ *  exposes an ALLOWLIST of this surface, not the whole inner object — see its doc. */
 export interface ClientEvmSigner {
   readonly address: `0x${string}`;
   signTypedData(td: TypedData): Promise<`0x${string}`>;
@@ -94,9 +95,27 @@ export class PaymentFlowContext {
 }
 
 /**
+ * The NON-signing capabilities of the x402 `ClientEvmSigner` contract that the SDK may legitimately
+ * call. These carry no signing power, so they are forwarded to the inner signer if present. Any
+ * signing method (and everything not on this list) is deliberately NOT forwarded — see below.
+ */
+const NON_SIGNING_PASSTHROUGH = ["readContract", "getTransactionCount", "estimateFeesPerGas"] as const;
+
+/**
  * Wrap an EVM signer so the guard vets every `signTypedData` before it is honored. On allow
  * the real signer runs and its signature is returned unchanged; on anything else a
  * `PaymentBlockedError` is thrown and the real signer is never reached.
+ *
+ * ALLOWLIST, not a spread (blocklist→allowlist hardening). The EIP-3009 authorization IS an
+ * EIP-712 signature, reproducible by ANY signing route the signer exposes — so the wrap must be
+ * the sole path to a signature. A `{...inner}` spread that then blocked the *known* routes
+ * (`sign`/`signMessage`/`signTransaction`) re-exposed any route it didn't enumerate: a real viem
+ * `LocalAccount`, for instance, also ships `signAuthorization` (EIP-7702), which leaked through
+ * unguarded. So instead of copying the inner object and subtracting, we BUILD a fresh object that
+ * exposes ONLY: `address`, the guarded `signTypedData`, explicit throwers for the known signing
+ * routes (for a clear error), and the non-signing passthroughs above. Every other property —
+ * present or future signing method, or anything else on the inner signer — is simply absent, so
+ * the whole *class* of alternate signing routes is closed, not an enumerated subset.
  *
  * `guard` is any `Authorizer` — a `SpendGuard` (optionally wrapped in a `LoggingGuard`).
  */
@@ -105,17 +124,14 @@ export function guardedSigner<S extends ClientEvmSigner>(
   guard: Authorizer,
   context: PaymentFlowContext,
 ): S {
-  // Any signature over the same digest by another route would bypass the veto: the EIP-3009
-  // authorization IS an EIP-712 signature, reproducible via sign()/signMessage()/signTransaction().
-  // Only the guarded signTypedData is a permitted signing route; close all others, fail-closed.
   const blockSigningRoute = (method: string) => async (): Promise<never> => {
     throw new PaymentBlockedError(
       "adapter.unguarded_signing_route",
       `Refused '${method}': the guard vets only signTypedData; no other signing route is permitted.`,
     );
   };
-  return {
-    ...inner, // preserve NON-signing capabilities (address, readContract, getTransactionCount, …)
+  const guarded: Record<string, unknown> = {
+    address: inner.address,
     async signTypedData(td: TypedData): Promise<`0x${string}`> {
       // Build the authorization from the EXACT struct about to be signed — bind reality,
       // not the offer. An unsupported struct (e.g. a Permit2 witness) is refused here.
@@ -131,10 +147,18 @@ export function guardedSigner<S extends ClientEvmSigner>(
       }
       return inner.signTypedData(td);
     },
-    // Every OTHER route to a signature is closed (Finding A). These override any same-named
-    // method the concrete signer exposed via the spread above.
+    // Known signing routes get explicit throwers for a clear error; unknown ones are simply absent.
     sign: blockSigningRoute("sign"),
     signMessage: blockSigningRoute("signMessage"),
     signTransaction: blockSigningRoute("signTransaction"),
-  } as S;
+    signAuthorization: blockSigningRoute("signAuthorization"),
+  };
+  // Forward ONLY the non-signing contract capabilities, and only if the inner signer provides them.
+  for (const cap of NON_SIGNING_PASSTHROUGH) {
+    const fn = (inner as Record<string, unknown>)[cap];
+    if (typeof fn === "function") {
+      guarded[cap] = (fn as (...args: unknown[]) => unknown).bind(inner);
+    }
+  }
+  return guarded as unknown as S;
 }

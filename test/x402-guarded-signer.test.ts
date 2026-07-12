@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
 import {
   PaymentFlowContext,
   guardedSigner,
@@ -159,6 +160,40 @@ describe("guardedSigner — the veto core", () => {
     };
     await g.readContract();
     expect(reads).toBe(1); // non-signing capability preserved
+  });
+
+  it("ALLOWLIST: a real viem LocalAccount exposes NO un-blocked signing route through the wrap", async () => {
+    // The decisive test for blocklist→allowlist. A real viem LocalAccount ships MORE signing
+    // methods than a blocklist enumerates — notably `signAuthorization` (EIP-7702), which a
+    // `{...inner}` spread would re-expose UNGUARDED. The allowlist returns only a curated safe
+    // surface, so every route to a signature except the guarded `signTypedData` is unreachable.
+    // Throwaway key: never funded, and with a DENY guard it never actually signs here.
+    const account = privateKeyToAccount(generatePrivateKey());
+    const guarded = guardedSigner(account, new FakeGuard(DENY), fullContext());
+    const g = guarded as unknown as Record<string, unknown>;
+
+    const otherSigning = Object.keys(account).filter((k) => /sign/i.test(k) && k !== "signTypedData");
+    expect(otherSigning).toContain("signAuthorization"); // the exact route a blocklist misses
+    for (const name of otherSigning) {
+      // Not reachable by reference: the wrapper never hands back the real signer's method.
+      expect(g[name], `${name} leaked the real signer by reference`).not.toBe(
+        (account as Record<string, unknown>)[name],
+      );
+    }
+
+    // Stronger — NO inner property leaked at all: the wrapper's own keys are the curated set only.
+    const ALLOWED = new Set([
+      "address", "signTypedData", "sign", "signMessage", "signTransaction", "signAuthorization",
+      "readContract", "getTransactionCount", "estimateFeesPerGas",
+    ]);
+    for (const k of Object.keys(g)) {
+      expect(ALLOWED.has(k), `unexpected key leaked through the wrap: ${k}`).toBe(true);
+    }
+
+    // The one guarded route still vetoes — the real key never signs on a deny. (Call through the
+    // ClientEvmSigner view; viem's own signTypedData param is narrower than our TypedData.)
+    const err = await blocked((guarded as unknown as ClientEvmSigner).signTypedData(validTd()));
+    expect(err.reason).toBe("cap.per_request");
   });
 });
 

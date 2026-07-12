@@ -15,6 +15,7 @@
 // `npm run test:e2e` (its own vitest config + CI job), never the default green-main gate. Lives
 // under test/e2e/ so the static no-egress proof over src/ is untouched.
 import { describe, it, expect } from "vitest";
+import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
 import { x402Client, x402HTTPClient } from "@x402/core/client";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import type { PaymentRequired } from "@x402/core/types";
@@ -114,14 +115,16 @@ function prV1(): PaymentRequired {
 }
 
 /** Drive the REAL @x402 client through a genuine 402 with our guard binding installed. Returns
- *  the propagated error (if any), which signing routes the inner signer saw, and the 402 status. */
-async function attempt(pr: PaymentRequired, guard: SpendGuard) {
+ *  the propagated error (if any), which signing routes the inner signer saw, and the 402 status.
+ *  With no `signerOverride` it uses the recording canary; pass a real signer (e.g. a viem
+ *  LocalAccount) to prove the allowlist-wrapped signer still satisfies the real SDK. */
+async function attempt(pr: PaymentRequired, guard: SpendGuard, signerOverride?: ClientEvmSigner) {
   const binding = createSpendGuardBinding(guard);
   const canary = makeCanary();
   const client = new x402Client();
   // registerExactEvmScheme wires BOTH generations (v2 eip155:* + v1 legacy names) onto our
   // wrapped signer — the guard now sits on the one signing route the scheme can use.
-  registerExactEvmScheme(client, { signer: binding.wrapSigner(canary.signer) as never });
+  registerExactEvmScheme(client, { signer: binding.wrapSigner(signerOverride ?? canary.signer) as never });
   client.onBeforePaymentCreation(binding.hook);
   const httpClient = new x402HTTPClient(client);
   const server = await startX402Server(pr);
@@ -181,6 +184,17 @@ describe("deny-path e2e — the real @x402 client cannot route around the veto",
     expect(error).toBeDefined();
     expect(error!.message).toMatch(/origin\.mismatch/);
     expect(touched).toEqual([]);
+  });
+
+  it("allowlist did not over-restrict (v2): a real viem LocalAccount signs a genuine payment through the wrap", async () => {
+    // The allowlist exposes only a curated surface — this proves it still SATISFIES the real SDK.
+    // A real LocalAccount, wrapped, drives the real client all the way to a created payment payload
+    // on ALLOW: the account produces a genuine signature and createPaymentPayload succeeds, so the
+    // wrap dropped no method the exact scheme needs. Throwaway key, never funded; the payload is
+    // created but never settled or transmitted. (Guards against the allowlist over-restricting.)
+    const account = privateKeyToAccount(generatePrivateKey());
+    const { error } = await attempt(prV2(), guardWith(policyOf({})), account as unknown as ClientEvmSigner);
+    expect(error).toBeUndefined();
   });
 
   for (const [gen, mk] of [["v2", prV2], ["v1", prV1]] as const) {
