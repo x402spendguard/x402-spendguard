@@ -28,16 +28,17 @@ Convention: each item names its **gate** (what must be true before it ships) and
   compares the challenge by reference, so a re-parsed-equal challenge re-observed before `consume`
   fails closed (the safe direction) rather than being treated as idempotent.
 
-- **Live testnet end-to-end harness — the top gate before any funded wallet.** Prove the real
-  `@x402` client + a real signer + our binding actually blocks a bad payment against a live
-  facilitator, and specifically that the SDK reaches a signature **only** through the wrapped
-  `signTypedData` and no other route (Finding A, in the wild). Exercise **both wire generations**
-  now that v1 is wired (D-027) — base-sepolia is a v1-capable testnet target. Publish it in-repo,
-  with guardrails:
-  **no secrets committed** (testnet-only wallet key from an untracked `.env`; ship a `.env.example`
-  + setup docs); it lives **outside `src/`** (`test/e2e/` or `examples/`) because it makes real
-  outbound calls — the core's provable no-egress guarantee must stay intact; **CI-gated** (opt-in
-  behind a flag / separate `test:e2e`, never the default green-main gate).
+- **Live e2e harness — DENY PATH DONE (D-028); funded settle path remains.** The deny-path
+  milestone shipped: the real `@x402` client (both generations) driven through a genuine 402 over
+  localhost, with our binding installed, blocks a bad payment and reaches a signature **only** via
+  the wrapped `signTypedData` (Finding A, in the wild) — asserted with a canary signer, so **no key
+  and no funds** are involved. Lives in `test/e2e/` (never imported by `src/`, no-egress proof
+  intact), opt-in `npm run test:e2e` + a separate CI job, never the green-main gate; `.env*`
+  gitignored except `.env.example`. **Remaining — the funded settle path:** one *policy-compliant*
+  micro-payment that actually settles on a testnet facilitator (base-sepolia), proving the happy
+  path end-to-end. This is the only part that moves value: it needs a **funded testnet wallet**
+  (key from the untracked `.env`) and stays out of automated CI. **Until it exists, do not place
+  this in front of a funded wallet.** (D-028; THREAT_MODEL ASM3.)
 
 - **Read APIs for dashboard integration — pull, not push.** Surface what the guard captures so
   others can build their own dashboard tech, WITHOUT the guard ever egressing. The distinction:

@@ -4,11 +4,16 @@
   "description": "A spend firewall for AI agents making x402 payments. Enforces caps, allowlists, signature-integrity binding, and a kill switch before any payment is signed. Pre-alpha; v1 is anti-drain + signature integrity, EVM-only.",
   "type": "module",
   "license": "MIT",
+  "//files": "ALLOWLIST what a published tarball ships (allowlist > denylist — same lesson as the signer route-closure). Keeps network-capable test code (test/e2e imports node:http + fetch) OUT of the package, so the 'no egress' story holds for the ARTIFACT, not just src/. The full publish surface (dist/types/exports) is designed at the npm-publish gate; until then err toward shipping less.",
+  "files": [
+    "src"
+  ],
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts"
   },
   "devDependencies": {
     "@types/node": "^20.19.43",

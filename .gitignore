@@ -3,3 +3,9 @@ dist/
 *.log
 .DS_Store
 .claude/settings.local.json
+
+# Secrets — never commit a real key. The e2e settle path (deferred) reads an untracked .env;
+# only .env.example (placeholders) is tracked. Belt-and-braces against a testnet key leak.
+.env
+.env.*
+!.env.example

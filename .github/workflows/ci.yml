@@ -17,3 +17,18 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+
+  # The live-flow harness, kept as a SEPARATE job so it is never conflated with the hermetic
+  # green-main gate above. The deny-path suite is itself hermetic (localhost, no key, no funds),
+  # so it is safe to run in CI; the deferred funded settle path is the only part that will ever
+  # need secrets, and it stays out of automated CI.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run test:e2e
