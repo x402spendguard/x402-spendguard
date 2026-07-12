@@ -55,7 +55,12 @@ function policyOf(over: Record<string, unknown>): Policy {
 
 /** A real SpendGuard on an in-memory ledger + the REAL system clock. The real clock matters:
  *  the live @x402 client stamps `validBefore` from wall time, so a fake clock would false-deny
- *  at the timeout binding check. Generous lifetime + skew keep that check off the deny reason. */
+ *  at the timeout binding check. Generous lifetime + skew keep that check off the deny reason.
+ *
+ *  SCOPE: each `attempt()` builds a FRESH guard with fresh state, so this harness deliberately
+ *  does NOT exercise cumulative spend across calls (e.g. a third payment tripping the per-domain
+ *  cap because earlier ones consumed budget). Cumulative-cap enforcement over a real persisted
+ *  ledger is a separate e2e case — this is a deny-path *wiring* harness, not an accounting one. */
 function guardWith(policy: Policy): SpendGuard {
   let state = emptyState(systemClock.now());
   const store: SpendStore = {
@@ -191,7 +196,10 @@ describe("deny-path e2e — the real @x402 client cannot route around the veto",
       // deferred funded-settle path (a real signer) will exercise. See docs/roadmap.md.
       const { touched, error } = await attempt(mk(), guardWith(policyOf({})));
       expect(touched).toEqual(["signTypedData"]); // exactly the one guarded route
-      expect(error?.message ?? "").not.toMatch(/unguarded_signing_route/);
+      // Tighter than "not the bypass string": the guard ALLOWED, so any error (the dummy sig
+      // fails downstream in payload construction) must not be ANY guard deny reason — this can't
+      // accidentally pass on a *different* deny that merely lacks the `unguarded_signing_route` text.
+      expect(error?.message ?? "").not.toMatch(/\bhalt\b|allowlist\.|cap\.|origin\.mismatch|unguarded_signing_route/);
     });
   }
 });

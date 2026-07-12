@@ -24,7 +24,10 @@ Convention: each item names its **gate** (what must be true before it ships) and
   (`sign`/`signMessage`/`signTransaction`) to fail closed — covering every route to the EIP-3009
   signature *today*, but a *future* viem/SDK signing method would be re-exposed by the spread. The
   durable pattern is an **allowlist**: return only `address` + the guarded `signTypedData` +
-  explicitly-named non-signing methods. (Opus, D-026.) *Minor, related:* the interleave check
+  explicitly-named non-signing methods. (Opus, D-026.) **This residual is invisible to the
+  deny-path e2e harness by construction** (its canary exposes only 4 methods) — the *only* test
+  that will force it is the funded-settle milestone's real-`LocalAccount` acceptance criterion
+  (D-028). Do the allowlist refactor with that test in hand. *Minor, related:* the interleave check
   compares the challenge by reference, so a re-parsed-equal challenge re-observed before `consume`
   fails closed (the safe direction) rather than being treated as idempotent.
 
@@ -37,8 +40,12 @@ Convention: each item names its **gate** (what must be true before it ships) and
   gitignored except `.env.example`. **Remaining — the funded settle path:** one *policy-compliant*
   micro-payment that actually settles on a testnet facilitator (base-sepolia), proving the happy
   path end-to-end. This is the only part that moves value: it needs a **funded testnet wallet**
-  (key from the untracked `.env`) and stays out of automated CI. **Until it exists, do not place
-  this in front of a funded wallet.** (D-028; THREAT_MODEL ASM3.)
+  (key from the untracked `.env`) and stays out of automated CI. **Acceptance criterion (Opus,
+  D-028):** it MUST drive a **real viem `LocalAccount`** (not the 4-method canary) and assert **no
+  un-blocked signing route** across its full method surface — this is the ONLY test that will ever
+  exercise the blocklist→allowlist residual against a real signer, so it is a hard requirement of
+  this milestone, not a comment. **Until it exists, do not place this in front of a funded wallet.**
+  (D-028; THREAT_MODEL ASM3.)
 
 - **Read APIs for dashboard integration — pull, not push.** Surface what the guard captures so
   others can build their own dashboard tech, WITHOUT the guard ever egressing. The distinction:
