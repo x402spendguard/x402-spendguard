@@ -93,13 +93,13 @@ All caps are denominated per **(asset, chain)** and compared in integer smallest
 
 > Durable, single-writer, crash-safe spend accounting is, to our knowledge, **unsolved in the existing tools we read** (both keep spend in per-process memory). It is genuinely open ground and one of the harder parts of v1.
 
-> **KNOWN LIMITATION — cross-process (flagged by external review, 2026-07-10).** ACCT-02's single-writer guarantee holds *within one process*. The bundled `FileSpendStore` uses atomic writes but **no cross-process lock**, so two processes sharing one ledger file (e.g. two agent workers, one wallet) can both load pre-spend state, both pass a cap, and both write last-write-wins — which **under-counts and silently bypasses the cap**, in the money-losing direction. Until this is closed, **run one guard instance per wallet.** The real fix (an OS/advisory-locked or compare-and-swap store providing cross-process single-writer) is tracked as **ACCT-05** below; its build-vs-defer timing is an open decision.
+> **CROSS-PROCESS (ACCT-05, now MET — D-031).** ACCT-02's single-writer guarantee holds *within one process*; **ACCT-05 extends single-writer across processes** via a versioned **compare-and-swap** store. A losing writer is *told* it lost (a detected conflict, not a silent last-write-wins overwrite) and re-evaluates against fresh state — collapsing the two scopes into one mechanism. The store **refuses to run** on a filesystem it can't prove honors concurrent atomic exclusive-create (`store.unverified`, fail-closed), so an unsupported topology fails *loud*, not silently. *Validation note:* the CAS logic is proven; a genuine **two-process (ideally two-host)** run on your target filesystem is the final check before relying on it in a multi-process deployment (see [design note](docs/design-acct-05-cas-store.md)).
 
 | ID | Requirement | Threat | Test |
 |----|-------------|--------|------|
 | **ACCT-05** | A spend store shared across processes is serialized (cross-process single-writer): two processes cannot both pass a cap they jointly exceed. | T9 | `cross-process-cannot-both-pass` |
 
-> ACCT-05 is **not yet met** — it is an honest open requirement, not a shipped guarantee (see `test/deferred.test.ts`). It exists so the limitation cannot hide.
+> ACCT-05 is **MET (D-031):** the versioned compare-and-swap `FileSpendStore` (`link()`-based atomic create-or-`EEXIST`) + the guard's bounded, fail-closed CAS retry loop. Tests: `cross-process-cannot-both-pass` (accounting.test.ts) plus the CAS suite (cas-store.test.ts: exhaustion→deny, the concurrent-exclusive-create probe refusing a broken filesystem, and real `link()` stale-version rejection).
 
 ## Privacy and egress
 

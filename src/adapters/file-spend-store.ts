@@ -1,10 +1,27 @@
-// Adapter: a durable, single-file spend store. Writes are atomic (write-temp +
-// rename) so a crash mid-write cannot corrupt the ledger. bigints are serialized as
-// decimal strings because JSON has no bigint. This is an edge module — filesystem
-// I/O is expected here, not in the pure core.
-import { readFileSync, openSync, writeSync, fsyncSync, closeSync, renameSync, existsSync } from "node:fs";
+// Adapter: a durable, cross-process-safe spend store (ACCT-05). State lives in VERSION-NAMED
+// files `<path>.v<N>`. A commit is a genuine OS-atomic compare-and-swap: write the next state to a
+// unique temp, fsync it, then `link()` it to `<path>.v<N+1>` — `link` is an atomic create-or-EEXIST,
+// so exactly one of two racing writers wins the new version and the loser gets a real conflict
+// (never a silent last-write-wins overwrite). This is an edge module; filesystem I/O belongs here.
+//
+// See docs/design-acct-05-cas-store.md and decisions D-031. The startup probe (verifyAtomicity)
+// is CONCURRENT — it races two link()s at one target and refuses to run if both win — because a
+// sequential check passes on exactly the filesystem (NFS) that silently under-counts under load.
+import {
+  readFileSync,
+  readdirSync,
+  openSync,
+  writeSync,
+  fsyncSync,
+  closeSync,
+  linkSync,
+  unlinkSync,
+  statfsSync,
+} from "node:fs";
+import { link as linkAsync, writeFile, unlink as unlinkAsync } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import type { SpendStore } from "../accounting/guard.js";
+import { dirname, basename, join } from "node:path";
+import type { SpendStore, Version } from "../accounting/guard.js";
 import { emptyState, nullMap } from "../accounting/guard.js";
 import type { SpendState, UnixSeconds } from "../types.js";
 
@@ -49,31 +66,176 @@ function deserialize(text: string): SpendState {
   };
 }
 
+/** How many stale version files to keep (>= 3) — widens the window between a reader picking the
+ *  highest version and cleanup possibly deleting it, so the read-retry below is a rare backstop. */
+const KEEP_VERSIONS = 3;
+/** Bounded, fail-closed read-retry: if a chosen version file vanishes under cleanup mid-read, we
+ *  re-enumerate. If it keeps vanishing this many times, we give up and DENY (throw → load_failed). */
+const READ_RETRY_MAX = 8;
+
+/**
+ * Race two concurrent exclusive-creates (`link`) at one fresh target and require EXACTLY ONE to
+ * win. On a filesystem that honors exclusive-create the loser gets `EEXIST`; on one that lies under
+ * contention (NFS et al.) BOTH appear to win — which is the silent-under-count failure we refuse.
+ * Extracted + `link`-injectable so it can be adversarially tested against a simulated-broken FS.
+ */
+export async function probeConcurrentExclusiveCreate(
+  dir: string,
+  link: (src: string, dest: string) => Promise<void> = linkAsync,
+  rounds = 3,
+): Promise<void> {
+  for (let r = 0; r < rounds; r++) {
+    const target = join(dir, `.x402probe.${process.pid}.${randomUUID()}`);
+    const srcA = `${target}.a`;
+    const srcB = `${target}.b`;
+    await writeFile(srcA, "a");
+    await writeFile(srcB, "b");
+    const results = await Promise.allSettled([link(srcA, target), link(srcB, target)]);
+    const wins = results.filter((x) => x.status === "fulfilled").length;
+    for (const f of [srcA, srcB, target]) {
+      await unlinkAsync(f).catch(() => {});
+    }
+    if (wins !== 1) {
+      throw new Error(
+        `spend ledger filesystem does not honor concurrent exclusive-create (probe round ${r + 1}: ` +
+          `${wins} of 2 racing link()s to one target succeeded; expected exactly 1). Refusing to run ` +
+          `(a shared ledger here could silently under-count). Use a local disk. See docs/design-acct-05-cas-store.md.`,
+      );
+    }
+  }
+}
+
+/** Refuse a store on a known-unsafe (network) mount, where exclusive-create atomicity is not
+ *  guaranteed — belt-and-suspenders with the probe (which races once, at boot, and can be fooled by
+ *  timing). Best-effort: if the platform can't report the filesystem type, we rely on the probe. */
+function assertSupportedMount(dir: string): void {
+  if (typeof statfsSync !== "function") return;
+  let type: number;
+  try {
+    type = statfsSync(dir).type;
+  } catch {
+    return; // can't determine → rely on the concurrent probe + docs
+  }
+  // Linux VFS statfs f_type magic numbers for filesystems without guaranteed exclusive-create.
+  const UNSAFE: Record<number, string> = { 0x6969: "NFS", 0xff534d42: "SMB/CIFS", 0x517b: "SMB" };
+  const name = UNSAFE[type];
+  if (name) {
+    throw new Error(
+      `spend ledger is on a ${name} mount, where exclusive-create atomicity is not guaranteed; ` +
+        `refusing to run — use a local disk or an external store. See docs/design-acct-05-cas-store.md.`,
+    );
+  }
+}
+
 export class FileSpendStore implements SpendStore {
+  private readonly dir: string;
+  private readonly prefix: string;
+
   constructor(
     private readonly path: string,
     private readonly initialNow: UnixSeconds,
-  ) {}
-
-  async load(): Promise<SpendState> {
-    if (!existsSync(this.path)) return emptyState(this.initialNow);
-    return deserialize(readFileSync(this.path, "utf8"));
+  ) {
+    this.dir = dirname(path);
+    this.prefix = `${basename(path)}.v`;
   }
 
-  async save(state: SpendState): Promise<void> {
-    // Atomic + durable: write to a UNIQUE temp file (so concurrent writers never clobber the
-    // same temp), fsync it so the bytes hit disk, then rename over the target. A crash leaves
-    // either the old ledger or the fully-written new one — never a truncated file.
-    // NOTE: rename is atomic per-file but this store still has no CROSS-PROCESS lock; a shared
-    // ledger across processes can lost-update (ACCT-05, open). Run one instance per wallet.
+  private versionPath(n: number): string {
+    return `${this.path}.v${n}`;
+  }
+
+  /** Highest version present, or 0 if none. */
+  private highestVersion(): number {
+    let entries: string[];
+    try {
+      entries = readdirSync(this.dir);
+    } catch {
+      return 0; // dir missing → no ledger yet
+    }
+    let max = 0;
+    for (const name of entries) {
+      if (!name.startsWith(this.prefix)) continue;
+      const n = Number(name.slice(this.prefix.length));
+      if (Number.isInteger(n) && n > max) max = n;
+    }
+    return max;
+  }
+
+  async load(): Promise<{ state: SpendState; version: Version }> {
+    for (let attempt = 0; attempt < READ_RETRY_MAX; attempt++) {
+      const n = this.highestVersion();
+      if (n === 0) return { state: emptyState(this.initialNow), version: "0" as Version };
+      try {
+        const text = readFileSync(this.versionPath(n), "utf8");
+        return { state: deserialize(text), version: String(n) as Version };
+      } catch (err) {
+        // The chosen version vanished under cleanup between enumerate and read → re-enumerate.
+        // Any OTHER error (corrupt JSON, permissions) propagates → the guard denies (load_failed).
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw err;
+      }
+    }
+    throw new Error("could not obtain a stable ledger read (version files kept vanishing under cleanup)");
+  }
+
+  async compareAndSave(expected: Version, next: SpendState): Promise<boolean> {
+    const n = Number(expected);
+    const target = this.versionPath(n + 1);
+    // Write the full next state to a unique temp and fsync it, so the version file is COMPLETE
+    // before it exists under its name (crash-safe), then atomically claim the name via link().
     const tmp = `${this.path}.tmp.${process.pid}.${randomUUID()}`;
     const fd = openSync(tmp, "w");
     try {
-      writeSync(fd, serialize(state));
+      writeSync(fd, serialize(next));
       fsyncSync(fd);
     } finally {
       closeSync(fd);
     }
-    renameSync(tmp, this.path);
+    try {
+      linkSync(tmp, target); // ATOMIC create-or-EEXIST — the compare-and-swap
+    } catch (err) {
+      try {
+        unlinkSync(tmp);
+      } catch {
+        /* best-effort */
+      }
+      if ((err as NodeJS.ErrnoException).code === "EEXIST") return false; // version advanced → conflict
+      throw err;
+    }
+    try {
+      unlinkSync(tmp); // target is now a hardlink to the content; the temp name is no longer needed
+    } catch {
+      /* best-effort */
+    }
+    this.cleanup(n + 1);
+    return true;
+  }
+
+  /** Delete version files older than the last KEEP_VERSIONS. Best-effort: a concurrent writer's
+   *  cleanup may have already removed them, and a missing file is fine. */
+  private cleanup(current: number): void {
+    let entries: string[];
+    try {
+      entries = readdirSync(this.dir);
+    } catch {
+      return;
+    }
+    for (const name of entries) {
+      if (!name.startsWith(this.prefix)) continue;
+      const n = Number(name.slice(this.prefix.length));
+      if (Number.isInteger(n) && n <= current - KEEP_VERSIONS) {
+        try {
+          unlinkSync(join(this.dir, name));
+        } catch {
+          /* best-effort */
+        }
+      }
+    }
+  }
+
+  /** Startup self-test (fail-closed): concurrent exclusive-create must honor exactly-one-winner,
+   *  AND the mount must not be a known-unsafe network filesystem. Both, per the design note. */
+  async verifyAtomicity(): Promise<void> {
+    assertSupportedMount(this.dir);
+    await probeConcurrentExclusiveCreate(this.dir);
   }
 }

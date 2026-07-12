@@ -20,7 +20,7 @@ import { x402Client, x402HTTPClient } from "@x402/core/client";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import type { PaymentRequired } from "@x402/core/types";
 import { createSpendGuardBinding } from "../../src/adapters/x402-binding.js";
-import { SpendGuard, emptyState, type Clock, type SpendStore } from "../../src/accounting/guard.js";
+import { SpendGuard, emptyState, type Clock, type SpendStore, type Version } from "../../src/accounting/guard.js";
 import { systemClock } from "../../src/adapters/system-clock.js";
 import { parsePolicy } from "../../src/parse.js";
 import type { ClientEvmSigner } from "../../src/adapters/x402-guarded-signer.js";
@@ -64,13 +64,18 @@ function policyOf(over: Record<string, unknown>): Policy {
  *  ledger is a separate e2e case — this is a deny-path *wiring* harness, not an accounting one. */
 function guardWith(policy: Policy): SpendGuard {
   let state = emptyState(systemClock.now());
+  let version = 0;
   const store: SpendStore = {
     async load() {
-      return state;
+      return { state, version: String(version) as Version };
     },
-    async save(s) {
-      state = s;
+    async compareAndSave(expected, next) {
+      if (String(version) !== expected) return false;
+      version++;
+      state = next;
+      return true;
     },
+    async verifyAtomicity() {},
   };
   return new SpendGuard(store, systemClock, policy);
 }

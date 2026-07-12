@@ -17,7 +17,7 @@ import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { HTTPFacilitatorClient } from "@x402/core/http";
 import type { PaymentRequired, PaymentRequirements } from "@x402/core/types";
 import { createSpendGuardBinding } from "../../src/adapters/x402-binding.js";
-import { SpendGuard, emptyState, type SpendStore } from "../../src/accounting/guard.js";
+import { SpendGuard, emptyState, type SpendStore, type Version } from "../../src/accounting/guard.js";
 import { systemClock } from "../../src/adapters/system-clock.js";
 import { parsePolicy } from "../../src/parse.js";
 import type { ClientEvmSigner } from "../../src/adapters/x402-guarded-signer.js";
@@ -52,7 +52,12 @@ describe.skipIf(!KEY)("FUNDED settle (base-sepolia, real USDC moves) — opt-in 
     });
     if (!policy.ok) throw new Error(`bad funded-test policy: ${policy.reason} ${policy.detail}`);
     let state = emptyState(systemClock.now());
-    const store: SpendStore = { async load() { return state; }, async save(s) { state = s; } };
+    let version = 0;
+    const store: SpendStore = {
+      async load() { return { state, version: String(version) as Version }; },
+      async compareAndSave(expected, next) { if (String(version) !== expected) return false; version++; state = next; return true; },
+      async verifyAtomicity() {},
+    };
     const guard = new SpendGuard(store, systemClock, policy.value);
 
     // Wire the real @x402 client with our binding and the REAL funded account (allowlist-wrapped).

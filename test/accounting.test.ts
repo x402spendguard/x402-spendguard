@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { existsSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SpendGuard, emptyState, applyWindow } from "../src/accounting/guard.js";
-import type { Clock, SpendStore } from "../src/accounting/guard.js";
+import type { Clock, SpendStore, Version } from "../src/accounting/guard.js";
 import { FileSpendStore } from "../src/adapters/file-spend-store.js";
 import type { SpendState, UnixSeconds } from "../src/types.js";
 import { A, T, key, ORIGIN, policy, ev } from "./helpers.js";
@@ -16,17 +16,25 @@ class FakeClock implements Clock {
   }
 }
 
-// An async in-memory store. Async on purpose: it makes the concurrency guarantee (ACCT-02)
-// a real property rather than an artifact of synchronous code.
+// An async in-memory versioned (CAS) store. Async on purpose: the `tick()` yield makes the
+// concurrency guarantees (ACCT-02/05) real properties, not artifacts of synchronous code. The
+// version counter is the compare-and-swap: a save whose expected version no longer matches loses.
 class MemStore implements SpendStore {
+  private version = 0;
   constructor(public state: SpendState) {}
-  async load(): Promise<SpendState> {
+  async load(): Promise<{ state: SpendState; version: Version }> {
     await tick();
-    return structuredClone(this.state);
+    return { state: structuredClone(this.state), version: String(this.version) as Version };
   }
-  async save(s: SpendState): Promise<void> {
+  async compareAndSave(expected: Version, next: SpendState): Promise<boolean> {
     await tick();
-    this.state = structuredClone(s);
+    if (String(this.version) !== expected) return false; // version advanced under us → conflict
+    this.version++;
+    this.state = structuredClone(next);
+    return true;
+  }
+  async verifyAtomicity(): Promise<void> {
+    /* single-process in-memory: trivially atomic */
   }
 }
 const tick = () => new Promise<void>((r) => setTimeout(r, 0));
@@ -67,18 +75,37 @@ describe("single-writer serialization (ACCT-02)", () => {
   });
 });
 
+describe("cross-process single-writer (ACCT-05)", () => {
+  it("cross-process-cannot-both-pass", async () => {
+    // Two INDEPENDENT guards (two in-process mutexes) sharing ONE ledger — the cross-process
+    // situation: each "process" serializes itself, but they share the wallet's store. Fire two
+    // 0.6 payments against a 1.0 cap. Without cross-process arbitration both load pre-spend state
+    // and both pass (the ACCT-05 lost update). Exactly one must win. RED until the CAS store lands.
+    const store = new MemStore(emptyState(START));
+    const gA = new SpendGuard(store, new FakeClock(START), capPolicy);
+    const gB = new SpendGuard(store, new FakeClock(START), capPolicy);
+    const [a, b] = await Promise.all([gA.authorize(pay6), gB.authorize(pay6)]);
+    const allows = [a, b].filter((d) => d.verdict === "allow").length;
+    expect(allows).toBe(1);
+  });
+});
+
 describe("durable across restart (ACCT-03)", () => {
-  const path = join(tmpdir(), "x402-spendguard-acct-test.json");
-  beforeEach(() => rmSync(path, { force: true }));
-  afterEach(() => rmSync(path, { force: true }));
+  let dir: string;
+  let ledger: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "x402-acct03-")); // isolate: the store writes version files ledger.v<N>
+    ledger = join(dir, "ledger");
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
   it("state-survives-restart", async () => {
-    const g1 = new SpendGuard(new FileSpendStore(path, START), new FakeClock(START), capPolicy);
+    const g1 = new SpendGuard(new FileSpendStore(ledger, START), new FakeClock(START), capPolicy);
     expect((await g1.authorize(pay6)).verdict).toBe("allow");
-    expect(existsSync(path)).toBe(true);
+    expect(existsSync(`${ledger}.v1`)).toBe(true);
 
-    // A fresh guard + fresh store instance pointed at the same file = a process restart.
-    const g2 = new SpendGuard(new FileSpendStore(path, START), new FakeClock(START), capPolicy);
+    // A fresh guard + fresh store instance pointed at the same ledger = a process restart.
+    const g2 = new SpendGuard(new FileSpendStore(ledger, START), new FakeClock(START), capPolicy);
     const second = await g2.authorize(pay6);
     expect(second.verdict).toBe("deny"); // the persisted 0.6 constrains the second 0.6
     expect(second.reason).toBe("cap.per_domain");
@@ -115,13 +142,17 @@ describe("clock anomaly fails closed (CLOCK-01)", () => {
 });
 
 describe("corrupt ledger fails closed (H3)", () => {
-  const path = join(tmpdir(), "x402-spendguard-corrupt-test.json");
-  beforeEach(() => rmSync(path, { force: true }));
-  afterEach(() => rmSync(path, { force: true }));
+  let dir: string;
+  let ledger: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "x402-corrupt-"));
+    ledger = join(dir, "ledger");
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
   it("corrupt-ledger-denies", async () => {
-    writeFileSync(path, "{ this is not valid json", "utf8");
-    const guard = new SpendGuard(new FileSpendStore(path, START), new FakeClock(START), capPolicy);
+    writeFileSync(`${ledger}.v1`, "{ this is not valid json", "utf8"); // corrupt the version file the store reads
+    const guard = new SpendGuard(new FileSpendStore(ledger, START), new FakeClock(START), capPolicy);
     const d = await guard.authorize(pay6);
     expect(d.verdict).toBe("deny"); // must DENY, not throw out of authorize()
     expect(d.reason).toBe("state.load_failed");
@@ -150,10 +181,11 @@ describe("spend record failure denies (FAIL-03, spend half)", () => {
   it("spend-record-failure-denies", async () => {
     // A store whose durable save fails must NOT let the payment proceed uncounted.
     const failing: SpendStore = {
-      load: async () => emptyState(START),
-      save: async () => {
+      load: async () => ({ state: emptyState(START), version: "0" as Version }),
+      compareAndSave: async () => {
         throw new Error("disk full");
       },
+      verifyAtomicity: async () => {},
     };
     const guard = new SpendGuard(failing, new FakeClock(START), capPolicy);
     const d = await guard.authorize(pay6);

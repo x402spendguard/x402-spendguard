@@ -24,11 +24,26 @@ export interface Clock {
   now(): UnixSeconds;
 }
 
-/** Injected durable spend store. Async so the edge can be a file/db; also makes the
- *  concurrency guarantee (ACCT-02) real rather than an artifact of synchronous code. */
+/** An OPAQUE version token. The store returns it from `load` and requires it back on
+ *  `compareAndSave`; the guard round-trips it and NEVER interprets it, so the store stays
+ *  topology-agnostic (a file store uses an integer, a DB a row-version, a Durable Object its own). */
+export type Version = string & { readonly __version: unique symbol };
+
+/**
+ * Injected durable spend store — a versioned COMPARE-AND-SWAP contract (ACCT-05). `load` returns
+ * the state plus its version; `compareAndSave` commits only if the store is STILL at that version,
+ * else reports a conflict (never a silent overwrite). This is what makes cross-process
+ * single-writer possible without a lock: a losing writer is TOLD it lost, and re-evaluates against
+ * fresh state. Async so the edge can be a file/db, and so the concurrency guarantee is real.
+ */
 export interface SpendStore {
-  load(): Promise<SpendState>;
-  save(state: SpendState): Promise<void>;
+  load(): Promise<{ state: SpendState; version: Version }>;
+  /** Commit `next` iff the store is still at `expected`; resolves `true` on commit, `false` on a
+   *  version conflict. Throwing (an I/O failure) is treated by the guard as record-failed → deny. */
+  compareAndSave(expected: Version, next: SpendState): Promise<boolean>;
+  /** Startup self-test: prove the store honors CONCURRENT exclusive-create, fail-closed if not.
+   *  For an in-memory / single-process store this is trivially satisfied. */
+  verifyAtomicity(): Promise<void>;
 }
 
 /**
@@ -94,59 +109,97 @@ export function recordSpend(state: SpendState, ev: PaymentEvaluation): SpendStat
 
 const deny = (reason: string, detail: string): PolicyDecision => ({ verdict: "deny", reason, detail });
 
+/** Default bound on CAS retries under cross-process contention. Liveness-only: exhaustion ALWAYS
+ *  denies (fail-closed), never wrongly allows, so this is a mechanism knob, not policy. */
+export const DEFAULT_MAX_CAS_ATTEMPTS = 8;
+
 /**
  * The stateful guard. Wrap the pure engine with durable, serialized, write-ahead
  * accounting. One instance per protected wallet/policy.
  */
 export class SpendGuard {
   private readonly mutex = new Mutex();
+  private verified = false;
 
   constructor(
     private readonly store: SpendStore,
     private readonly clock: Clock,
     private readonly policy: Policy,
+    /** Bound on CAS retries under contention (liveness-only; exhaustion denies). Injectable. */
+    private readonly maxCasAttempts: number = DEFAULT_MAX_CAS_ATTEMPTS,
   ) {}
 
-  /** Decide on a payment and, if allowed, durably record the spend before returning. */
+  /**
+   * Decide on a payment and, if allowed, durably record the spend before returning.
+   *
+   * The in-process mutex serializes this instance; the store's compare-and-swap serializes ACROSS
+   * processes (ACCT-05). On a cross-process conflict the loop RE-LOADS and RE-EVALUATES against the
+   * fresh state (a payment fine against old state may now be over-cap → correctly flips to deny) —
+   * it never retries the stale verdict. Bounded: on exhaustion under contention it DENIES.
+   */
   authorize(ev: PaymentEvaluation): Promise<PolicyDecision> {
     return this.mutex.run(async () => {
-      // Load + window advance are I/O and parsing at the edge — a corrupt or unreadable
-      // ledger must DENY, not throw out of authorize(). Fail-closed extends to the accounting
-      // layer; the guard never depends on the caller wrapping this call.
-      let state: SpendState;
-      let now: UnixSeconds;
-      try {
-        const raw = this.clock.now();
-        const loaded = await this.store.load();
-        state = applyWindow(loaded, raw, this.policy.windowSeconds);
-        now = state.lastSeen; // the monotonic, effective clock
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "unknown error";
-        return deny("state.load_failed", `Could not load spend state; denying by default: ${msg}`);
-      }
-
-      const decision = evaluate(ev, this.policy, state, now);
-
-      if (decision.verdict === "allow") {
-        // Write-ahead: durably record BEFORE returning allow. If the record fails,
-        // we must not let the payment proceed uncounted — deny.
+      // Prove the store's cross-process compare-and-swap actually holds on THIS deployment before
+      // trusting it — once, fail-closed. On an unsupported topology (a filesystem that can't honor
+      // concurrent exclusive-create) this refuses LOUD rather than silently under-enforcing (ASM6).
+      if (!this.verified) {
         try {
-          await this.store.save(recordSpend(state, ev));
+          await this.store.verifyAtomicity();
+          this.verified = true;
         } catch (err) {
           const msg = err instanceof Error ? err.message : "unknown error";
-          return deny("spend.record_failed", `Could not durably record spend; denying: ${msg}`);
+          return deny("store.unverified", `Spend store failed its atomicity self-test; refusing to operate: ${msg}`);
+        }
+      }
+
+      for (let attempt = 0; attempt < this.maxCasAttempts; attempt++) {
+        // Load + window advance are I/O and parsing at the edge — a corrupt or unreadable
+        // ledger must DENY, not throw out of authorize(). Fail-closed extends to the accounting layer.
+        let loaded: { state: SpendState; version: Version };
+        let state: SpendState;
+        let now: UnixSeconds;
+        try {
+          const raw = this.clock.now();
+          loaded = await this.store.load();
+          state = applyWindow(loaded.state, raw, this.policy.windowSeconds);
+          now = state.lastSeen; // the monotonic, effective clock
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "unknown error";
+          return deny("state.load_failed", `Could not load spend state; denying by default: ${msg}`);
+        }
+
+        const decision = evaluate(ev, this.policy, state, now);
+
+        if (decision.verdict === "allow") {
+          // Write-ahead: durably record BEFORE returning allow. A commit conflict means another
+          // writer advanced the ledger since we loaded — retry (re-load + re-evaluate). A thrown
+          // I/O failure means we could not record at all — deny (never proceed uncounted).
+          let committed: boolean;
+          try {
+            committed = await this.store.compareAndSave(loaded.version, recordSpend(state, ev));
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "unknown error";
+            return deny("spend.record_failed", `Could not durably record spend; denying: ${msg}`);
+          }
+          if (committed) return decision;
+          continue; // CAS conflict → re-load, re-evaluate against fresh state
+        }
+
+        // On deny, best-effort persist the advanced window/lastSeen so time monotonicity sticks —
+        // via the same CAS, but a conflict or failure here never flips the (already-safe) deny.
+        try {
+          await this.store.compareAndSave(loaded.version, state);
+        } catch {
+          /* deny stands regardless */
         }
         return decision;
       }
 
-      // On deny, still persist the advanced window/lastSeen so time monotonicity sticks —
-      // but never let a persistence failure flip the (already-safe) deny.
-      try {
-        await this.store.save(state);
-      } catch {
-        /* deny stands regardless */
-      }
-      return decision;
+      // Bounded retry exhausted under sustained cross-process contention → fail closed.
+      return deny(
+        "spend.contention",
+        `Could not commit spend within ${this.maxCasAttempts} attempts under contention; denying (fail-closed).`,
+      );
     });
   }
 }

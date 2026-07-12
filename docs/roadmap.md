@@ -70,11 +70,16 @@ Convention: each item names its **gate** (what must be true before it ships) and
 
 ## Tracked deferrals
 
-- **ACCT-05 — cross-process spend integrity.** The bundled file store has no cross-process lock;
-  two processes on one wallet can under-count. The fix is an **architectural fork, not "which lock"**
-  (single-owner authorizer vs a transactional store vs an external store) — decided *before* the code,
-  because it's the same fault as the read-only/serverless silent fail-open. **Gate: converge on which
-  deployment topologies to honestly support; land before the npm-publish gate.** (D-021, D-024; ASM6.)
+- **ACCT-05 — cross-process spend integrity. DONE (D-031).** Closed by a **topology-agnostic
+  versioned (compare-and-swap) store seam**: the guard's `SpendStore` is now load-with-version /
+  save-if-unchanged; the bundled `FileSpendStore` implements it with a genuine OS-atomic `link()`
+  (create-or-`EEXIST`), a **concurrent** startup probe that refuses-closed on a filesystem that can't
+  prove atomic exclusive-create (+ a known-unsafe-mount denylist), keep-last-3 cleanup, and bounded
+  fail-closed read-retry. The guard runs a bounded CAS retry loop that re-evaluates on conflict and
+  denies on exhaustion. Unifies ACCT-02 + ACCT-05 (one mechanism, two scopes) and closes the ASM6
+  silent fail-open (refuse loud). Chosen over single-owner/lock/external via the tier lens (D-031).
+  **Remaining follow-up (small):** a genuine **two-process / two-host** smoke test on a real target
+  FS before softening the README's "one instance per wallet" all the way (Opus's honesty gate).
 
 - **L2 — ledger-file permission check.** The decision log is now created `0o600` (D-025 F2); the
   symmetric world-writable check on the `FileSpendStore` ledger is still owed — a one-line mirror of
