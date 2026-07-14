@@ -54,7 +54,7 @@ Limits we hold ourselves to, stated up front:
 
 - **Fail closed.** Every ambiguous case — a policy error, an engine exception, a missing field — results in **deny**. A guard that fails open is not a guard.
 - **Mechanism, not policy.** The guard enforces the deterministic policy *you* write; it forms no opinions of its own. No heuristic "this looks suspicious" judgments — that would be the guard authoring policy — so, no anomaly detection.
-- **No egress.** The guard makes no network calls and ships no telemetry. Your payment data never leaves your machine. Absent, not opt-out.
+- **No egress.** The guard makes no network calls and ships no telemetry. Your payment data never leaves your machine. Absent, not opt-out. Read APIs like `snapshot()` are **pull, not push** — an in-process, owner-only view you request locally, never a sender; the guard is a data *source you control*. The copy it hands back is your private financial posture (including who you pay) — treat it with the same care as the ledger file.
 - **Small, auditable core.** The security-critical logic is a pure function with zero runtime dependencies — small enough to read in one sitting.
 
 ## Documentation

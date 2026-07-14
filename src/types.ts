@@ -140,3 +140,69 @@ export interface SpendState {
    *  reset a window or un-count spend (CLOCK-01). Managed by the accounting layer. */
   lastSeen: UnixSeconds;
 }
+
+// ── Snapshot (a read-only, pull projection of current spend vs. caps — the viewer primitive) ──
+//
+// SENSITIVITY — READ THIS. A `Snapshot` exposes NOTHING NEW: `snapshot()` is an in-process,
+// owner-only method reachable only by code that already holds the signer and can read the ledger
+// directly. It is NOT a network endpoint and crosses no boundary. BUT it materializes a convenient
+// PORTABLE COPY of the wallet's full financial posture — every denomination, amount, and cap, and
+// in `byDomain` the COUNTERPARTY GRAPH (who the owner pays), the single most sensitive field here.
+// So the risk is not exposure-by-this-method; it is YOUR handling of the copy. Treat it with the
+// SAME care as the ledger file: do not log it, serialize it to a world-readable path, or transmit
+// it without deliberate protection. The core hands it back in-process and never persists or ships
+// it (no egress); the copy's lifecycle is the caller's responsibility.
+//
+// NOTE: `spent` MAY EXCEED a cap. That is the write-ahead over-count (a payment recorded then
+// rejected downstream still consumed budget — a run of failures can walk past a cap; README
+// limitation #4), not a bug. `remaining` clamps at 0 for display; `spent` and the raw cap are both
+// present, so a consumer can compute the overage. Do NOT assume `spent <= cap`.
+
+/** One `(asset, chain)` denomination: dynamic budget state (`spent`/`remaining`) kept SEPARATE from
+ *  the static configured `caps`, so a UI cannot conflate a per-payment limit with cumulative headroom. */
+export interface DenominationSnapshot {
+  /** The AssetKey coordinate, e.g. "eip155:8453|0x…". */
+  key: string;
+  /** Cumulative spent in this denomination, this window, across all domains. MAY exceed a cap. */
+  spent: bigint;
+  /** Budget headroom = max(0, caps.global − spent); null when no global cap is configured. */
+  remaining: bigint | null;
+  /** STATIC configured limits (policy, not budget state); each null when unconfigured. */
+  caps: { perRequest: bigint | null; global: bigint | null };
+}
+
+/** One domain (request origin) and its per-denomination spend. A domain appears only once it has
+ *  spent (state tracks spent domains; the set of possible domains is unbounded). Part of the
+ *  counterparty graph — see the SENSITIVITY note above. */
+export interface DomainSnapshot {
+  origin: string;
+  byAsset: {
+    key: string;
+    spent: bigint;
+    /** The per-domain cap for this denomination; null when unconfigured. */
+    perDomainCap: bigint | null;
+    /** max(0, perDomainCap − spent); null when unconfigured. */
+    remaining: bigint | null;
+  }[];
+}
+
+/** A read-only, point-in-time projection of current spend vs. policy caps + the budget window.
+ *  Sensitive-data-at-rest the moment you hold it (see the SENSITIVITY note above). */
+export interface Snapshot {
+  /** The effective monotonic clock the budget is evaluated against (max(wall now, lastSeen)). */
+  now: UnixSeconds;
+  /** Kill-switch state. */
+  halt: boolean;
+  /** Start of the current budget window (after the read-only monotonic advance). */
+  windowStart: UnixSeconds;
+  /** Configured window length; 0 means "no rolling reset" (cumulative forever). */
+  windowSeconds: UnixSeconds;
+  /** When the window next rolls (windowStart + windowSeconds); null when windowSeconds === 0. */
+  windowEndsAt: UnixSeconds | null;
+  /** Union of configured caps and denominations present in state — every budget line shows (even at
+   *  0 spent), and a spend in an unconfigured denomination (a v1 impossibility, handled defensively)
+   *  shows with null caps rather than being hidden. */
+  byDenomination: DenominationSnapshot[];
+  /** Per-domain spend — the counterparty graph (see SENSITIVITY). */
+  byDomain: DomainSnapshot[];
+}

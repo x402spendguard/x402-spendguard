@@ -134,6 +134,16 @@ All caps are denominated per **(asset, chain)** and compared in integer smallest
 | **DEP-01** | The core has **zero** runtime dependencies. | (supply chain) | `core-zero-deps` |
 | **OBS-01** | Every decision carries a stable, machine-readable reason code. | (design) | `every-decision-has-reason` |
 
+## Read API (snapshot)
+
+A read-only, **pull** projection of current spend vs. caps — the primitive a local viewer/dashboard consumes. Viewer-never-actor: it exposes **nothing new** (owner-only, in-process; the caller already holds the signer and can read the ledger directly), and the core never persists or ships it. A `Snapshot`, once held, is the system's most sensitive artifact-at-rest (the counterparty graph in `byDomain`); its lifecycle is the caller's responsibility (see the type doc).
+
+| ID | Requirement | Threat | Test |
+|----|-------------|--------|------|
+| **SNAP-01** | `snapshot()` is **read-only**: it reads state via the store's existing retried `load()` and **never** writes — no `compareAndSave`, no `verifyAtomicity` — so it cannot mutate spend or interfere with `authorize()`. A read-only monotonic window advance is computed for display and **never persisted**. | (design) | `snapshot-is-read-only` |
+| **SNAP-02** | On an **unreadable** spend store, `snapshot()` **throws** (`snapshot.state_unreadable`), never a fabricated zeroed snapshot. The **same** no-false-permissive principle as fail-closed, pointing **loud** instead of closed because a zeroed snapshot is a *lie* (a read for a human), not a safe deny. | (design) | `snapshot-unreadable-throws-not-zeros` |
+| **SNAP-03** | The snapshot is an **honest view**: every configured cap appears (even at 0 spent), a denomination with spend but no configured cap is **shown** (never hidden), and a write-ahead **over-count** is surfaced — `spent` may exceed a cap; `remaining` clamps at 0 while the raw `spent`/cap remain visible. | (design) | `snapshot-honest-view` |
+
 ## Testability — stated as requirements, not aspirations
 
 "Testability" is not falsifiable and therefore cannot itself be a requirement. The concrete properties that *produce* it are — and they are **design requirements**, because a guard whose fail-closed and accounting behavior cannot be tested cannot be trusted. See [TEST_PLAN.md](TEST_PLAN.md).

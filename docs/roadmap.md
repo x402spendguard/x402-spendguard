@@ -44,9 +44,11 @@ Convention: each item names its **gate** (what must be true before it ships) and
   others can build their own dashboard tech, WITHOUT the guard ever egressing. The distinction:
   a read interface (the user pulls their own data locally) is not egress; only the guard
   *initiating* an outbound send is. Ladder, tightest first: (1) the **JSONL decision log already
-  is the read API** (structured, `v:1`, `0o600`); (2) a read-only in-process **`snapshot()`**
-  (current spend per (domain,asset), cap headroom, window, halt) — **the cheap first step, fully
-  in-boundary**; (3) optional, opt-in, *separate* module — a **loopback-only, read-only** local
+  is the read API** (structured, `v:1`, `0o600`); (2) a read-only in-process **`snapshot()`** —
+  **DONE (D-033)**: current spend per (domain,asset), cap headroom, window, halt; pure
+  `projectSnapshot` + `SpendGuard.snapshot()`; lock-free (rides the store's retried `load()`),
+  read-only (never writes/persists), fails **loud** (`snapshot.state_unreadable`) never fabricating
+  zeros, honest (surfaces write-ahead over-count, hides no denom); SNAP-01..03; (3) optional, opt-in, *separate* module — a **loopback-only, read-only** local
   endpoint for a separate-process UI (never in core); (4) **not ours** — the fleet collector /
   cross-machine aggregation (management edge): the integrator builds it on their infra with their
   egress decision, atop our read interface. The read surface must be a documented, versioned

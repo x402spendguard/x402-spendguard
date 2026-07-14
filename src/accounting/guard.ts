@@ -17,7 +17,8 @@
 
 import { evaluate } from "../policy/engine.js";
 import { assetKey } from "../parse.js";
-import type { PaymentEvaluation, Policy, PolicyDecision, SpendState, UnixSeconds } from "../types.js";
+import { projectSnapshot, SnapshotUnreadableError } from "./snapshot.js";
+import type { PaymentEvaluation, Policy, PolicyDecision, SpendState, Snapshot, UnixSeconds } from "../types.js";
 
 /** Injected wall clock. The real one lives in an adapter; tests inject a fake. */
 export interface Clock {
@@ -201,5 +202,33 @@ export class SpendGuard {
         `Could not commit spend within ${this.maxCasAttempts} attempts under contention; denying (fail-closed).`,
       );
     });
+  }
+
+  /**
+   * A read-only, point-in-time view of current spend vs. caps (SNAP-01..03). The primitive a local
+   * viewer/dashboard pulls — see the `Snapshot` type doc for the sensitivity contract.
+   *
+   * READ-ONLY and LOCK-FREE. It rides the store's EXISTING retried `load()` — which is what makes it
+   * both tear-free (CAS writes create new, complete version files atomically) AND vanish-safe (its
+   * bounded ENOENT re-enumeration handles a version file removed by cleanup mid-read). That, not
+   * atomicity alone, is why no mutex is needed; a shortcut `load` that skipped the retry would break
+   * this. It NEVER calls `compareAndSave` or `verifyAtomicity`: a snapshot cannot mutate state, and
+   * cannot interfere with `authorize()`.
+   *
+   * Fails LOUD, not closed: on an unreadable store it THROWS `SnapshotUnreadableError`, never a
+   * fabricated zeroed snapshot — the same no-false-permissive principle as fail-closed, pointing
+   * loud because a zeroed snapshot is a lie (see that error). NOT taken through the mutex.
+   */
+  async snapshot(): Promise<Snapshot> {
+    let loaded: { state: SpendState; version: unknown };
+    try {
+      loaded = await this.store.load();
+    } catch (err) {
+      throw new SnapshotUnreadableError(err);
+    }
+    // Advance the window for DISPLAY only (monotonic; never persisted), so the view reflects what the
+    // next payment would see — a fresh (zeroed) budget if a window has elapsed since the last write.
+    const advanced = applyWindow(loaded.state, this.clock.now(), this.policy.windowSeconds);
+    return projectSnapshot(advanced, this.policy, advanced.lastSeen);
   }
 }
