@@ -6,6 +6,7 @@
 // Format is JSON (D-023): dep-free, so the guard adds no parser to its own supply
 // chain — the exact class of transitive dependency it exists to be skeptical of.
 import { statSync, readFileSync } from "node:fs";
+import { modeIsWorldWritable } from "./fs-perms.js";
 import { parsePolicy } from "../parse.js";
 import type { Result } from "../parse.js";
 import type { Policy } from "../types.js";
@@ -28,7 +29,8 @@ export function loadPolicyFile(path: string): Result<Policy> {
   }
   // CONF-01: a world-writable policy could be silently rewritten by any local user.
   // Scoped exactly to the world-write bit — not group, not owner: mechanism, not judgment.
-  if ((mode & 0o002) !== 0) {
+  // Guarded for Windows (PLAT-01), where synthesized mode bits would misfire into a deny-all.
+  if (modeIsWorldWritable(mode)) {
     return fail("config.world_writable", `Policy file "${path}" is world-writable; refusing to load it.`);
   }
   let text: string;

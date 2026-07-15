@@ -24,6 +24,7 @@ import { randomUUID } from "node:crypto";
 import { dirname, basename, join } from "node:path";
 import type { SpendStore, Version } from "../accounting/guard.js";
 import { emptyState, nullMap } from "../accounting/guard.js";
+import { modeIsWorldWritable } from "./fs-perms.js";
 import type { SpendState, UnixSeconds } from "../types.js";
 
 interface Serialized {
@@ -172,7 +173,7 @@ export class FileSpendStore implements SpendStore {
         // judgment. Our own version files are created 0o600 (PRIV-04), so this only ever fires on a
         // ledger a third party (or a pre-0o600 build) left loose. `statSync` ENOENT is a vanished
         // file → falls through to the ENOENT handler below and re-enumerates.
-        if ((statSync(this.versionPath(n)).mode & 0o002) !== 0) {
+        if (modeIsWorldWritable(statSync(this.versionPath(n)).mode)) {
           throw new Error(
             `spend ledger "${this.versionPath(n)}" is world-writable; refusing to trust it (possible tampering).`,
           );

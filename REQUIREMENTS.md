@@ -129,7 +129,11 @@ All caps are denominated per **(asset, chain)** and compared in integer smallest
 
 > CONF-01 is the *only* defense v1 offers against policy-file tampering (T15/A8). Full policy-file integrity against an attacker with host write access is A5-adjacent and out of scope; policy integrity otherwise rests on filesystem permissions the user controls.
 
-> **All file-permission gates are POSIX-only.** CONF-01 (world-writable `policy.json`), the decision log's `0o600` creation, and **ACCT-06/PRIV-04** (the ledger's `0o600` + world-writable refusal) are all POSIX-permission-based: the `& 0o002` check and the `0o600` mode are meaningful on Unix-like systems and are a **no-op / best-effort on Windows**, where Node synthesizes mode bits. Read "world-writable refused" and "owner-private" as **Unix guarantees, not cross-platform** ones — one boundary, shared by all three gates.
+> **All file-permission gates are POSIX-only (and are explicitly guarded — PLAT-01).** CONF-01 (world-writable `policy.json`), the decision log's `0o600` creation, and **ACCT-06/PRIV-04** (the ledger's `0o600` + world-writable refusal) are POSIX-permission-based. On Windows, Node **synthesizes** `stat().mode` from the read-only attribute — a normal writable file reports `0o666` — so an *unguarded* `& 0o002` check would **misfire into a deny-all** (refuse every policy/ledger), not merely no-op. So the world-writable checks are **skipped on `win32`** (PLAT-01), degrading to an honest no-op. Read "world-writable refused" / "owner-private" as **Unix guarantees, not cross-platform**; Windows privacy+integrity rest on **NTFS ACLs** — place these files under the user profile (`%LOCALAPPDATA%`), where inherited ACLs restrict them to the owner.
+
+| ID | Requirement | Threat | Test |
+|----|-------------|--------|------|
+| **PLAT-01** | The POSIX file-permission refusals (CONF-01 policy, ACCT-06 ledger) are **skipped on Windows** (`process.platform === "win32"`), where Node synthesizes mode bits — so they degrade to an honest no-op instead of misfiring into a deny-all. | (portability) | `perm-gates-skipped-on-windows` |
 > Format is JSON (D-023): dep-free, so the guard adds no parser to its own supply chain. The loader also *parses* the file into a trustworthy `Policy` at the boundary — every field required (no code-side defaults, POL-01), money/time re-parsed through the branded primitives, cap keys re-canonicalized. A named requirement for that parse behavior (**CONF-02**) is proposed, pending ratification.
 
 ## Core hygiene

@@ -97,6 +97,15 @@ Convention: each item names its **gate** (what must be true before it ships) and
   future *uniform* dir-perm pass, documented rather than half-addressed. Kevin pulled this forward
   from the snapshot privacy discussion (it's the real "who-else-on-this-box" surface). (D-022, D-025.)
 
+- **Windows platform-guard for the perm gates. DONE (D-035).** The POSIX mode-bit refusals
+  (CONF-01 policy, ACCT-06 ledger) are now **skipped on Windows** (`process.platform === "win32"`)
+  via a single guarded predicate (`modeIsWorldWritable`), where Node synthesizes `0o666` and an
+  unguarded check would **misfire into a deny-all** (not merely no-op) — a latent brick, invisible
+  because dev/CI is Linux/WSL2. Windows privacy/integrity rest on NTFS ACLs (`%LOCALAPPDATA`);
+  a full ACL adapter is a future opt-in (needs `icacls`/native → out of the zero-dep core). PLAT-01.
+  Surfaced by Kevin's "what about Windows users?" question. **Still owed:** verification on real
+  Windows (can't from Linux/WSL2), and the deferred *uniform dir-perm pass* noted under L2.
+
 - **CONF-02 — name the policy-parse behavior as a requirement.** `parsePolicy`'s parse-into-`Policy`
   contract is tested but has no requirement ID. **Gate: Kevin ratifies.** (D-024.)
 
