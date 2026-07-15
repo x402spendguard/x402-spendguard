@@ -16,6 +16,7 @@ import {
   closeSync,
   linkSync,
   unlinkSync,
+  statSync,
   statfsSync,
 } from "node:fs";
 import { link as linkAsync, writeFile, unlink as unlinkAsync } from "node:fs/promises";
@@ -165,11 +166,22 @@ export class FileSpendStore implements SpendStore {
       const n = this.highestVersion();
       if (n === 0) return { state: emptyState(this.initialNow), version: "0" as Version };
       try {
+        // ACCT-06: refuse a world-writable ledger BEFORE trusting its bytes — the CONF-01 ordering.
+        // A world-writable ledger could be silently rewritten by any local user to reset spend
+        // (→ drain). Scoped to the world-write bit only (not group, not owner): mechanism, not
+        // judgment. Our own version files are created 0o600 (PRIV-04), so this only ever fires on a
+        // ledger a third party (or a pre-0o600 build) left loose. `statSync` ENOENT is a vanished
+        // file → falls through to the ENOENT handler below and re-enumerates.
+        if ((statSync(this.versionPath(n)).mode & 0o002) !== 0) {
+          throw new Error(
+            `spend ledger "${this.versionPath(n)}" is world-writable; refusing to trust it (possible tampering).`,
+          );
+        }
         const text = readFileSync(this.versionPath(n), "utf8");
         return { state: deserialize(text), version: String(n) as Version };
       } catch (err) {
         // The chosen version vanished under cleanup between enumerate and read → re-enumerate.
-        // Any OTHER error (corrupt JSON, permissions) propagates → the guard denies (load_failed).
+        // Any OTHER error (corrupt JSON, world-writable, permissions) propagates → the guard denies.
         if ((err as NodeJS.ErrnoException).code === "ENOENT") continue;
         throw err;
       }
@@ -183,7 +195,11 @@ export class FileSpendStore implements SpendStore {
     // Write the full next state to a unique temp and fsync it, so the version file is COMPLETE
     // before it exists under its name (crash-safe), then atomically claim the name via link().
     const tmp = `${this.path}.tmp.${process.pid}.${randomUUID()}`;
-    const fd = openSync(tmp, "w");
+    // PRIV-04: create owner-only (0o600) — the version file inherits this mode through link() below,
+    // so spend amounts, origins, and the counterparty graph are never world-readable at rest (the
+    // mirror of the decision log). Mode applies on creation; the world-write refusal in load() is
+    // the integrity half (ACCT-06).
+    const fd = openSync(tmp, "w", 0o600);
     try {
       writeSync(fd, serialize(next));
       fsyncSync(fd);

@@ -98,6 +98,9 @@ All caps are denominated per **(asset, chain)** and compared in integer smallest
 | ID | Requirement | Threat | Test |
 |----|-------------|--------|------|
 | **ACCT-05** | A spend store shared across processes is serialized (cross-process single-writer): two processes cannot both pass a cap they jointly exceed. | T9 | `cross-process-cannot-both-pass` |
+| **ACCT-06** | The durable spend ledger is **refused if world-writable** (fail-closed) — its permissions are checked **before** its bytes are trusted, so a locally-tampered ledger cannot silently reset spend (→ drain). The mirror of CONF-01 for the store; scoped to the world-write bit only (not group, not owner): mechanism, not judgment. | T15 | `ledger-refuses-world-writable` |
+
+> **ACCT-06 scope (honest, L2/D-034).** Scoped to the world-write bit on the ledger **file**, exactly like CONF-01 on `policy.json`. A world-writable ledger **directory** (where an attacker could plant a forged higher-version file) is a broader vector that applies equally to the policy file — CONF-01 does not check it either — and is deferred to a future *uniform* directory-permission pass rather than half-addressed here. Full integrity against an attacker with host write access is A5-adjacent and out of scope; ledger integrity otherwise rests on filesystem permissions the user controls. POSIX-only (see the shared file-permission-gates note under CONF-01).
 
 > ACCT-05 is **MET (D-031):** the versioned compare-and-swap `FileSpendStore` (`link()`-based atomic create-or-`EEXIST`) + the guard's bounded, fail-closed CAS retry loop. Tests: `cross-process-cannot-both-pass` (accounting.test.ts) plus the CAS suite (cas-store.test.ts: exhaustion→deny, the concurrent-exclusive-create probe refusing a broken filesystem, and real `link()` stale-version rejection).
 
@@ -108,6 +111,7 @@ All caps are denominated per **(asset, chain)** and compared in integer smallest
 | **PRIV-01** | The core makes no network calls; a static check fails the build if the core can import a socket-capable module. | T12 | `core-has-no-egress` |
 | **PRIV-02** | The decision log never contains the signed authorization or the payment header (both are bearer capabilities). | T11 | `log-never-contains-signature` |
 | **PRIV-03** | No telemetry. Absent, not opt-out. | T12 | `no-telemetry-calls` |
+| **PRIV-04** | The spend ledger is created **owner-private (`0o600`)** — spend amounts, origins, and the counterparty graph are private payment data (the same footing as the decision log's owner-only creation). Applies on **creation** only; a pre-existing file keeps its own mode (user-controlled, like CONF-01). | T12 | `ledger-created-owner-private` |
 
 ## Domain derivation
 
@@ -124,6 +128,8 @@ All caps are denominated per **(asset, chain)** and compared in integer smallest
 | **CONF-01** | The guard refuses to load a world-writable policy file (`policy.json`) — a deterministic startup gate, mechanism not judgment. Scoped to the world-write bit only (not group, not owner). | T15 | `rejects-world-writable-policy` |
 
 > CONF-01 is the *only* defense v1 offers against policy-file tampering (T15/A8). Full policy-file integrity against an attacker with host write access is A5-adjacent and out of scope; policy integrity otherwise rests on filesystem permissions the user controls.
+
+> **All file-permission gates are POSIX-only.** CONF-01 (world-writable `policy.json`), the decision log's `0o600` creation, and **ACCT-06/PRIV-04** (the ledger's `0o600` + world-writable refusal) are all POSIX-permission-based: the `& 0o002` check and the `0o600` mode are meaningful on Unix-like systems and are a **no-op / best-effort on Windows**, where Node synthesizes mode bits. Read "world-writable refused" and "owner-private" as **Unix guarantees, not cross-platform** ones — one boundary, shared by all three gates.
 > Format is JSON (D-023): dep-free, so the guard adds no parser to its own supply chain. The loader also *parses* the file into a trustworthy `Policy` at the boundary — every field required (no code-side defaults, POL-01), money/time re-parsed through the branded primitives, cap keys re-canonicalized. A named requirement for that parse behavior (**CONF-02**) is proposed, pending ratification.
 
 ## Core hygiene

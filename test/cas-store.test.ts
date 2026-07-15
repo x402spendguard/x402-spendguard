@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SpendGuard, emptyState } from "../src/accounting/guard.js";
@@ -87,6 +87,40 @@ describe("FileSpendStore compare-and-swap (real link())", () => {
       // A second writer still holding the stale "0" version: ledger.v1 already exists → link EEXIST
       // → conflict (false), NEVER a last-write-wins overwrite. This is the ACCT-05 fix, on disk.
       expect(await store.compareAndSave(version, emptyState(NOW))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("ledger file permissions (L2 — ACCT-06 integrity, PRIV-04 privacy)", () => {
+  it("ledger-created-owner-private", async () => {
+    // PRIV-04: version files hold spend amounts, origins, and the counterparty graph — created
+    // owner-only (0o600), the mirror of the decision log. Not world-readable at rest.
+    const dir = tmp();
+    try {
+      const ledger = join(dir, "ledger");
+      const store = new FileSpendStore(ledger, NOW as UnixSeconds);
+      const { version } = await store.load();
+      expect(await store.compareAndSave(version, emptyState(NOW))).toBe(true); // creates ledger.v1
+      expect(statSync(`${ledger}.v1`).mode & 0o777).toBe(0o600); // no group/other bits at all
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("ledger-refuses-world-writable", async () => {
+    // ACCT-06: a world-writable ledger could be silently rewritten by any local user to reset spend
+    // (→ drain). load() must REFUSE it — checking permissions BEFORE trusting the (possibly tampered)
+    // bytes, the exact CONF-01 ordering. Scoped to the world-write bit only.
+    const dir = tmp();
+    try {
+      const ledger = join(dir, "ledger");
+      const store = new FileSpendStore(ledger, NOW as UnixSeconds);
+      const { version } = await store.load();
+      await store.compareAndSave(version, emptyState(NOW)); // creates ledger.v1 (0o600)
+      chmodSync(`${ledger}.v1`, 0o666); // now world-writable — the tamper surface
+      await expect(store.load()).rejects.toThrow(/world-writable/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

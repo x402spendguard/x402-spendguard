@@ -89,9 +89,13 @@ Convention: each item names its **gate** (what must be true before it ships) and
   it needs a networked FS (which the store refuses) → an external CAS store adapter, not a shared
   file — folds into the store-adapters line, not a file-store gap.
 
-- **L2 — ledger-file permission check.** The decision log is now created `0o600` (D-025 F2); the
-  symmetric world-writable check on the `FileSpendStore` ledger is still owed — a one-line mirror of
-  CONF-01. **Gate: converge (pulling a deferred item forward is a scope call, per D-024).** (D-022, D-025.)
+- **L2 — ledger-file permission check. DONE (D-034).** The `FileSpendStore` ledger now mirrors both
+  patterns: version files are **created `0o600`** (owner-private at rest — PRIV-04) and a
+  **world-writable** ledger is **refused** on read before its bytes are trusted (integrity, the
+  CONF-01 mirror — ACCT-06). Scoped to the world-write bit on the **file** (consistent with CONF-01);
+  the world-writable-**directory** vector (equally applicable to `policy.json`) is deferred to a
+  future *uniform* dir-perm pass, documented rather than half-addressed. Kevin pulled this forward
+  from the snapshot privacy discussion (it's the real "who-else-on-this-box" surface). (D-022, D-025.)
 
 - **CONF-02 — name the policy-parse behavior as a requirement.** `parsePolicy`'s parse-into-`Policy`
   contract is tested but has no requirement ID. **Gate: Kevin ratifies.** (D-024.)
