@@ -1,0 +1,61 @@
+name: Release
+
+# Publish to npm when a version tag (vX.Y.Z) is pushed. The publish is ARMED but not automatic:
+# nothing ships until a maintainer deliberately tags a release (see docs/releasing.md), and the
+# version is currently HELD at 0.1.4 until the property-test pass lands (a published version is a
+# promise made once). Provenance (a signed build attestation via GitHub OIDC) lets a consumer verify
+# the tarball was built from this commit by this workflow — on-brand for a trust tool. The publish is
+# gated behind the SAME bar as green main, plus a guard that the tag matches package.json.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write # required for `npm publish --provenance` (OIDC build attestation)
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+          cache: npm
+      - run: npm ci
+
+      # Clear the same bar as a green main before anything is published: hermetic gate, the
+      # traceability matrix (regenerated + proven not stale), then the e2e artifact/integrity suite —
+      # including the pack-install teeth that prove the very tarball being published, and the smoke
+      # honesty gate with teeth on.
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run traceability
+      - run: git diff --exit-code TRACEABILITY.md
+      - run: npm run test:e2e
+        env:
+          SMOKE_TEETH: "1"
+
+      # A tag that disagrees with package.json is a mistake — never publish a mismatched version.
+      - name: Verify the tag matches package.json version
+        run: |
+          PKG="$(node -p "require('./package.json').version")"
+          TAG="${GITHUB_REF_NAME#v}"
+          if [ "$PKG" != "$TAG" ]; then
+            echo "::error::tag v$TAG does not match package.json version $PKG"
+            exit 1
+          fi
+          echo "publishing x402-spendguard@$PKG"
+
+      # --provenance: signed build attestation (needs id-token: write above).
+      # --access public: explicit for an unscoped package.
+      # NODE_AUTH_TOKEN: a granular automation token (repo secret NPM_TOKEN). Once the package exists,
+      # prefer npm Trusted Publishing (OIDC, no long-lived secret) and drop this env — see
+      # docs/releasing.md. `prepublishOnly` (typecheck+test) is a local backstop; the gate above is
+      # the real one.
+      - run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
