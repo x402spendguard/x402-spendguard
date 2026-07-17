@@ -5,6 +5,19 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). **This project is in `0.x` and is NOT
 stable — anything may change until `1.0.0` is earned.**
 
+## [0.2.1] — 2026-07-17
+
+Test-hardening only — **no functional or API change** (the published `dist/` is identical to `0.2.0`).
+Completes the property-test layer over the enforcement core, and is the first release published
+through the **tokenless OIDC pipeline** (Trusted Publishing + provenance, auto-created GitHub Release).
+
+### Internal
+- **Property invariants INV-5 / INV-6 / INV-8** (`fast-check`, dev-only): same-`(asset,chain)`
+  accounting (spend in one denomination never consumes another's cap), determinism/purity (same
+  arguments → same decision), and reason-code observability (every decision carries a non-empty reason
+  code). Each **mutation-proven** non-vacuous. This closes the generative-property targets — `INV-7` is
+  static via PRIV-01, `INV-3` is the fail-closed backstop + `INV-2` fuzzing. (TEST_PLAN §6.)
+
 ## [0.2.0] — 2026-07-17
 
 **First release on npm.** `x402-spendguard` is now `npm install`-able — a frozen, single-entry public

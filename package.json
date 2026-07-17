@@ -1,6 +1,6 @@
 {
   "name": "x402-spendguard",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A spend firewall for AI agents making x402 payments. Enforces caps, allowlists, signature-integrity binding, and a kill switch before any payment is signed. Pre-alpha; v1 is anti-drain + signature integrity, EVM-only.",
   "type": "module",
   "license": "MIT",
