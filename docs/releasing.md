@@ -45,6 +45,12 @@ These are the steps only the account owner can do; the workflow can't publish un
 
 ## Cutting a release (when the version hold lifts)
 
+> **The very first firing — extra care, cheap insurance.** The first real publish is where a
+> misconfiguration is most likely and most expensive. Run it through the **Environment gate with
+> required reviewers** (approve that specific run by hand) *even if* you've also set up Trusted
+> Publishing. Once the first clean publish proves the pipeline end-to-end, relax the gate to whatever
+> steady state you prefer.
+
 1. Ensure `main` is green (hermetic gate + e2e).
 2. Bump `version` in `package.json` (e.g., `0.1.4` → `0.2.0`).
 3. Move the `## [Unreleased]` block in `CHANGELOG.md` to `## [0.2.0] — <date>`.
