@@ -60,15 +60,21 @@ Convention: each item names its **gate** (what must be true before it ships) and
   (runtime `npm audit --omit=dev` = 0). Fix = upgrade `vitest` to 4.x (a breaking change); evaluate
   and do it deliberately. Not blocking; surfaced when `@x402` was added (which itself added none).
 
-- **Verifiable audit log.** Bundle three related audit-integrity items into one slice, because they
-  solve the same problem — *can a reader trust this trail wasn't truncated or forged?*
-  - **Sequence number (detectable loss).** A monotonic per-entry `seq` so a reader can *detect* a
-    missing entry, not just have a failure swallowed silently. Must be monotonic **across restarts**
-    (seed from the log tail on startup) or every restart is a false gap — a real sub-feature.
-  - **Tamper-evidence (hash chain).** Each entry carries the prior line's hash, so deletion/forgery
-    is detectable. Until then: *log integrity == filesystem permissions* (documented, not claimed away).
-  - **Rotation / size cap.** Unbounded growth lets attacker-driven volume fill the disk, which then
-    triggers the swallowed-loss path above. (Decision record: D-025, findings Q2/F4/F5.)
+- **Verifiable audit log — integrity core DONE (D-036).** The decision log is now tamper-**evident**:
+  per-entry `seq` + a hash chain (each record commits to the prior via an injected `ChainHasher`
+  seam — unkeyed SHA-256 default, pluggable to keyed HMAC), `verify({expectedHead?})` (anchor-relative:
+  self-verify is a health check, an external anchor or keyed mode catches a full rewrite), and
+  `onAuditFailure` surfacing (the swallowed-sink gap closed). Framed detection-not-prevention +
+  forensic-not-enforcement (a broken chain surfaces loud, never gates a payment — can't be a DoS),
+  consistent with the trust model (THREAT_MODEL §3). AUDIT-01..03. Seq monotonic across restarts
+  (seeded from the log tail; a **torn head** fails loud + restarts a fresh genesis whose discontinuity
+  is visible in `verify()`). **Fast-follows (deliberately split for undiluted review of the security
+  core):**
+  - **Rotation / size cap.** Unbounded growth lets attacker-driven volume fill the disk. Cross-segment
+    chain linkage is designed-in (a new segment's genesis `prev` = prior head). (D-025 Q2/F4/F5.)
+  - **Cross-process-log CAS.** Two processes sharing one log file can fork the chain; today `verify()`
+    **detects** the fork (fail-loud, forensic-only) — a CAS-for-the-log (mirroring the ledger, D-031)
+    would *prevent* it. Gated on a real multi-writer-one-log need. (D-036.)
 
 ## Tracked deferrals
 
@@ -109,9 +115,9 @@ Convention: each item names its **gate** (what must be true before it ships) and
 - **CONF-02 — name the policy-parse behavior as a requirement.** `parsePolicy`'s parse-into-`Policy`
   contract is tested but has no requirement ID. **Gate: Kevin ratifies.** (D-024.)
 
-- **Surface audit-write failures (operationally).** A failing sink is swallowed (correct — must not
-  flip a verdict) but currently invisible to the operator. Folds into the verifiable-audit-log slice
-  or an injected error callback. (D-025, FAIL-03.)
+- **Surface audit-write failures (operationally). DONE (D-036).** Folded into the audit-log slice: an
+  injected `onAuditFailure` on `LoggingGuard` surfaces a failed append (and a torn head) to the
+  operator; the verdict stays structurally independent (FAIL-03). (D-025, D-036, FAIL-03.)
 
 ## Cross-cutting (ongoing)
 

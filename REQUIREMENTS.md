@@ -113,6 +113,16 @@ All caps are denominated per **(asset, chain)** and compared in integer smallest
 | **PRIV-03** | No telemetry. Absent, not opt-out. | T12 | `no-telemetry-calls` |
 | **PRIV-04** | The spend ledger is created **owner-private (`0o600`)** — spend amounts, origins, and the counterparty graph are private payment data (the same footing as the decision log's owner-only creation). Applies on **creation** only; a pre-existing file keeps its own mode (user-controlled, like CONF-01). | T12 | `ledger-created-owner-private` |
 
+## Audit log integrity (tamper-evidence)
+
+The decision log is the forensic record (AS3) and the read-API's tightest rung. Its integrity is **tamper-*evidence* (detection), not tamper-*prevention*** — and, per FAIL-03, an audit-integrity failure is **forensic, never enforcement**: it surfaces loudly and never gates a payment (so it can never become a DoS). Consistent with the trust model ([THREAT_MODEL.md](THREAT_MODEL.md) §3): opportunistic hardening through a seam, honest about its limits.
+
+| ID | Requirement | Threat | Test |
+|----|-------------|--------|------|
+| **AUDIT-01** | The log is a **hash chain** — each record commits to its `seq`, the prior record's hash, and the entry contents; `verify()` detects a link-breaking edit, reorder, or mid-delete. **Self-verification is anchor-relative:** without an external `expectedHead` it catches non-adversarial corruption and naive edits, **not** a full self-consistent rewrite (by design — that needs the anchor or keyed mode). The contract carries this in its signature (`verify({expectedHead?})`), so it cannot be silently overclaimed. | (design) | `chain-detects-tamper`, `verify-is-anchor-relative` |
+| **AUDIT-02** | The integrity primitive is an **injected seam** (`ChainHasher`): default unkeyed SHA-256 (corruption + naive-tamper + export-verify against a pinned head), pluggable to keyed **HMAC** (forgery-resistant to an attacker without the key) with **no core change**. | (design) | `keyed-chain-detects-forgery` |
+| **AUDIT-03** | An audit-integrity failure — a failed append **or** a torn head at startup — **surfaces to the operator** (injected `onAuditFailure`) and **never flips a verdict** (FAIL-03). A torn head fails **loud** and starts a fresh genesis whose discontinuity is **visible in `verify()`** (never a silent clean slate). In-process appends are serialized (synchronous single-writer) into a linear chain; a cross-process fork is **detected** by `verify()`, not silently merged (CAS-for-the-log is a fast-follow). | (design) | `audit-failure-surfaced-not-swallowed`, `torn-head-fails-loud`, `concurrent-appends-linear-chain` |
+
 ## Domain derivation
 
 | ID | Requirement | Threat | Test |

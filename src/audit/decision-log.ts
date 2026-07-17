@@ -87,14 +87,24 @@ export class LoggingGuard implements Authorizer {
     private readonly inner: Authorizer,
     private readonly log: DecisionLog,
     private readonly clock: Clock,
+    /** Surfaced (never thrown) on an audit-write failure — so a swallowed sink is not invisible
+     *  to the operator (AUDIT-03). It NEVER affects the verdict (FAIL-03). */
+    private readonly onAuditFailure?: (err: unknown) => void,
   ) {}
 
   async authorize(ev: PaymentEvaluation): Promise<PolicyDecision> {
     const decision = await this.inner.authorize(ev);
     try {
       await this.log.append(toLogEntry(ev, decision, this.clock.now()));
-    } catch {
-      // An audit failure must never flip an allow/deny. The decision stands.
+    } catch (err) {
+      // Surface the failure so a swallowed sink is not invisible (AUDIT-03) — but the verdict stands
+      // regardless (FAIL-03, structural): the notifier runs after the decision and cannot change it,
+      // and its own failure is ignored so it can never turn an audit problem into a verdict change.
+      try {
+        this.onAuditFailure?.(err);
+      } catch {
+        /* a broken notifier must not flip the verdict either */
+      }
     }
     return decision;
   }
