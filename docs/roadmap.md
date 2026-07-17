@@ -123,13 +123,16 @@ Convention: each item names its **gate** (what must be true before it ships) and
 
 - **Property tests** (add `fast-check` as a dev dependency) and **full T1–T15 abuse-case coverage**
   against the threat model.
-- **npm-publish gate** — the SemVer 0.x publish milestone (D-020). The **publishable artifact is
-  built + pack-verified (D-037)** and the **release pipeline is armed**: `.github/workflows/release.yml`
-  publishes with **provenance** on a `vX.Y.Z` tag, gated behind the full suite + a tag↔version guard;
-  runbook + npm-account checklist in [releasing.md](releasing.md). The version is **held at 0.1.4** —
-  the `0.2.0` bump + first publish follow the **property-test pass** (build-the-artifact → property-test
-  the pinned surface → publish). Owed by the maintainer before first publish: reserve the name, 2FA, and
-  a scoped `NPM_TOKEN` (or Trusted-Publishing OIDC).
+- **npm-publish — SHIPPED (D-020/D-037).** `x402-spendguard@0.2.0` is live on npm with a **provenance**
+  attestation, published from CI on a `vX.Y.Z` tag by `.github/workflows/release.yml`, gated behind the
+  full suite + a tag↔version guard + an **on-`main` ancestry guard** (never publish an unreviewed commit
+  under provenance). Auth is **Trusted Publishing (OIDC)** — a two-job workflow where `id-token` is
+  scoped to a `publish` job that runs **no third-party code** (`--ignore-scripts`) while the OIDC
+  capability is live; **zero standing publish secrets** (the bootstrap classic token was revoked +
+  deleted). Runbook: [releasing.md](releasing.md).
+  - *Nice-to-have (non-blocking, CHENG):* re-run the two cheap guards (on-`main` ancestry + tag-match)
+    inside the `publish` job too, so it stays self-defending even if a future refactor weakens `gate`.
+    Sound today (publish `needs: gate`, a hard skip-on-failure dependency); belt-and-suspenders.
 
 ## v2 / explicitly out of scope for v1
 
