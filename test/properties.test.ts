@@ -13,13 +13,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { evaluate } from "../src/policy/engine.js";
 import { recordSpend, applyWindow, emptyState } from "../src/accounting/guard.js";
-import { parsePolicy, parseChallenge, parseAuthorization } from "../src/parse.js";
+import { parsePolicy, parseChallenge, parseAuthorization, assetKey } from "../src/parse.js";
 import { HashChainDecisionLog } from "../src/audit/hash-chain-log.js";
 import { hmacChainHasher } from "../src/audit/chain-hasher.js";
 import type { ChainedRecord } from "../src/audit/hash-chain-log.js";
 import type { LogEntry } from "../src/audit/decision-log.js";
-import { A, T, NOW, CHAIN, PAYEE, ATTACKER, USDC, policy, caps, ev, state } from "./helpers.js";
-import type { Amount } from "../src/types.js";
+import { A, T, NOW, CHAIN, PAYEE, ATTACKER, USDC, policy, caps, ev, state, key } from "./helpers.js";
+import type { Amount, Address } from "../src/types.js";
 
 const logEntry = (i: number): LogEntry => ({
   v: 1,
@@ -175,6 +175,63 @@ describe("properties (fast-check) — invariants over generated inputs", () => {
         },
       ),
       { numRuns: 120 },
+    );
+  });
+
+  // INV-5 — same-(asset,chain) accounting. A cap is keyed by (asset, chain); spend in one denomination
+  // must never consume another's headroom. Cap both assets equally, spend arbitrarily in asset A, then
+  // assert a full-cap payment in asset B is STILL allowed — A's spend never touched B's budget.
+  it("INV-5 same-asset accounting: spend in one (asset,chain) never consumes another's cap", () => {
+    const TOKEN_B = "0xcccccccccccccccccccccccccccccccccccccccc" as Address;
+    const keyB = assetKey({ chain: CHAIN, token: TOKEN_B });
+    const CAP = 3_000_000n;
+    const capObj = { perRequest: A(CAP), perDomain: A(CAP), global: A(CAP) };
+    fc.assert(
+      fc.property(fc.array(arbAmount, { maxLength: 20 }), (amountsA) => {
+        const pol = policy({
+          allowlist: [{ address: PAYEE, chain: CHAIN }],
+          caps: { [key]: capObj, [keyB]: capObj },
+        });
+        let st = state();
+        for (const amt of amountsA) {
+          const eA = ev({ amount: A(amt) }, { value: A(amt) }); // asset A (USDC default)
+          if (evaluate(eA, pol, st, NOW).verdict === "allow") st = recordSpend(st, eA);
+        }
+        // A payment for B's FULL cap must still pass — cross-asset headroom is independent.
+        const eB = ev({ asset: TOKEN_B, amount: A(CAP) }, { verifyingContract: TOKEN_B, value: A(CAP) });
+        return evaluate(eB, pol, st, NOW).verdict === "allow";
+      }),
+      { numRuns: 300 },
+    );
+  });
+
+  // INV-6 — purity/determinism. evaluate() reads no wall clock and no randomness internally, so the
+  // same arguments always produce the same decision. (The direct falsifiable form of CORE-01.)
+  it("INV-6 determinism: evaluate is a pure function of its arguments (same in → same out)", () => {
+    fc.assert(
+      fc.property(fc.constantFrom(PAYEE, ATTACKER), arbAmount, arbAmount, fc.boolean(), (to, cAmt, aAmt, halt) => {
+        const e = ev({ payTo: PAYEE, amount: A(cAmt) }, { to, value: A(aAmt) });
+        const pol = policy({ halt, allowlist: [{ address: PAYEE, chain: CHAIN }] });
+        const st = state();
+        const d1 = evaluate(e, pol, st, NOW);
+        const d2 = evaluate(e, pol, st, NOW);
+        return d1.verdict === d2.verdict && d1.reason === d2.reason && d1.detail === d2.detail;
+      }),
+      { numRuns: 300 },
+    );
+  });
+
+  // INV-8 — observability. Every decision, allow or deny, carries a non-empty machine-readable reason
+  // CODE (no whitespace — the human sentence lives in `detail`). This is what makes deny auditable.
+  it("INV-8 observability: every decision carries a non-empty reason code", () => {
+    fc.assert(
+      fc.property(fc.constantFrom(PAYEE, ATTACKER), arbAmount, arbAmount, fc.boolean(), (to, cAmt, aAmt, halt) => {
+        const e = ev({ payTo: PAYEE, amount: A(cAmt) }, { to, value: A(aAmt) });
+        const pol = policy({ halt, allowlist: [{ address: PAYEE, chain: CHAIN }] });
+        const { reason } = evaluate(e, pol, state(), NOW);
+        return typeof reason === "string" && reason.length > 0 && !/\s/.test(reason);
+      }),
+      { numRuns: 300 },
     );
   });
 });
