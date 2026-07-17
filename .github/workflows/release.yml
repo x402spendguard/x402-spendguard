@@ -1,29 +1,31 @@
 name: Release
 
-# Publish to npm when a version tag (vX.Y.Z) is pushed. The publish is ARMED but not automatic:
-# nothing ships until a maintainer deliberately tags a release (see docs/releasing.md), and the
-# version is currently HELD at 0.1.4 until the property-test pass lands (a published version is a
-# promise made once). Provenance (a signed build attestation via GitHub OIDC) lets a consumer verify
-# the tarball was built from this commit by this workflow — on-brand for a trust tool. The publish is
-# gated behind the SAME bar as green main, a guard that the tag matches package.json, AND a guard
-# that the tagged commit is actually on main (never publish an unreviewed commit under provenance).
+# Publish to npm when a version tag (vX.Y.Z) is pushed. Nothing ships until a maintainer deliberately
+# tags a release (see docs/releasing.md). Authentication is **Trusted Publishing (OIDC)** — short-lived,
+# no long-lived npm token in the repo. Provenance (a signed build attestation via the same OIDC token)
+# lets a consumer verify the tarball was built from this commit by this workflow. The publish is gated
+# behind the SAME bar as green main, a guard that the tag matches package.json, AND a guard that the
+# tagged commit is actually on main (never publish an unreviewed commit under provenance).
 on:
   push:
     tags:
       - "v*"
 
+# Least privilege: only the publish job gets id-token. The gate job runs untrusted-ish test code and
+# must NOT hold the OIDC publish capability.
 permissions:
   contents: read
-  id-token: write # required for `npm publish --provenance` (OIDC build attestation)
 
-# Serialize releases: two tag pushes (or a re-run) must not race two `npm publish` calls. Never
-# cancel an in-flight publish midway.
+# Serialize releases: two tag pushes (or a re-run) must not race two publishes. Never cancel an
+# in-flight publish midway.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
+  # GATE — the full green-main bar, on the SAME Node version main CI runs (20), so the suite is
+  # validated on the version we actually support. Carries the two fail-fast supply-chain guards.
+  gate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,9 +33,8 @@ jobs:
           fetch-depth: 0 # full history so the on-main ancestry check can resolve the tagged commit
 
       # SUPPLY-CHAIN GUARD (fail fast, first). A git tag can point at ANY commit — an unmerged or
-      # unreviewed branch, or one that reverted a security fix — and the gate below would happily pass
-      # it in isolation and publish it under a provenance attestation that VOUCHES for it. A trust tool
-      # must never sign-and-ship an unreviewed commit. Refuse unless the tagged commit is on main.
+      # unreviewed branch, or one that reverted a security fix. A trust tool must never sign-and-ship an
+      # unreviewed commit. Refuse unless the tagged commit is on main.
       - name: Refuse to publish a commit that is not on main
         run: |
           git fetch --no-tags origin main
@@ -48,19 +49,6 @@ jobs:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
           cache: npm
-      - run: npm ci
-
-      # Clear the same bar as a green main before anything is published: hermetic gate, the
-      # traceability matrix (regenerated + proven not stale), then the e2e artifact/integrity suite —
-      # including the pack-install teeth that prove the very tarball being published, and the smoke
-      # honesty gate with teeth on.
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run traceability
-      - run: git diff --exit-code TRACEABILITY.md
-      - run: npm run test:e2e
-        env:
-          SMOKE_TEETH: "1"
 
       # A tag that disagrees with package.json is a mistake — never publish a mismatched version.
       - name: Verify the tag matches package.json version
@@ -71,14 +59,40 @@ jobs:
             echo "::error::tag v$TAG does not match package.json version $PKG"
             exit 1
           fi
-          echo "publishing x402-spendguard@$PKG"
+          echo "will publish x402-spendguard@$PKG"
 
-      # --provenance: signed build attestation (needs id-token: write above).
-      # --access public: explicit for an unscoped package.
-      # NODE_AUTH_TOKEN: a granular automation token (repo secret NPM_TOKEN). Once the package exists,
-      # prefer npm Trusted Publishing (OIDC, no long-lived secret) and drop this env — see
-      # docs/releasing.md. `prepublishOnly` (typecheck+test) is a local backstop; the gate above is
-      # the real one.
-      - run: npm publish --provenance --access public
+      - run: npm ci
+      # Clear the same bar as a green main: hermetic gate, the traceability matrix (regenerated + proven
+      # not stale), then the e2e artifact/integrity suite — including the pack-install teeth that prove
+      # the very tarball being published, and the smoke honesty gate with teeth on.
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run traceability
+      - run: git diff --exit-code TRACEABILITY.md
+      - run: npm run test:e2e
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          SMOKE_TEETH: "1"
+
+  # PUBLISH — only if the gate passed. Trusted Publishing (OIDC) needs Node >= 22.14 / npm >= 11.5.1, so
+  # this job runs on Node 24. The vitest gate deliberately does NOT run here (it ran in `gate` on the
+  # supported Node 20); dependency install-scripts are skipped and the publish runs with --ignore-scripts,
+  # so NO third-party code executes while the OIDC publish capability is live.
+  publish:
+    needs: gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC — both Trusted Publishing auth AND the provenance attestation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+      - run: npm install -g npm@latest # Trusted Publishing requires npm >= 11.5.1
+      - run: npm ci --ignore-scripts # only tsc is needed to build; run no dependency install scripts
+      - run: npm run build # produce dist/ explicitly (first-party scripts only)
+      # OIDC auth (no NODE_AUTH_TOKEN). --provenance: signed attestation. --access public: explicit for
+      # an unscoped package. --ignore-scripts: dist is already built, so skip prepack/prepublishOnly (the
+      # gate already ran the suite on Node 20; this keeps vitest off Node 24 and runs no untrusted code).
+      - run: npm publish --provenance --access public --ignore-scripts

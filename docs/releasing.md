@@ -14,42 +14,27 @@ bug was caught *before* publish, not after: build the crate → property-test it
 
 These are the steps only the account owner can do; the workflow can't publish until they're done.
 
-1. **Reserve the name.** `x402-spendguard` is currently free on the registry (verified). The first
-   successful publish claims it — until then the name is unprotected.
-2. **Enable 2FA** on the npm account for **authorization and writes** (npm → Account → Two-Factor
-   Authentication). This protects interactive publishes and account changes.
-3. **Provide CI a publish credential — pick one:**
-   - **(Baseline) A granular automation token.** npm → Access Tokens → Generate → *Granular*,
-     **scoped to only the `x402-spendguard` package**, **read+write (publish)**, short expiry, "bypass
-     2FA for automation" (that is the token's purpose in CI). Add it to the repo as the Actions secret
-     **`NPM_TOKEN`** (GitHub → repo Settings → Secrets and variables → Actions). Scope it minimally so
-     a leaked token's blast radius is one package, not the account.
-     - **Required before the first real publish (token blast-radius, GAP 3):** while a long-lived
-       `NPM_TOKEN` exists it is in the environment of *every* step of the `release` job that runs
-       before `npm publish` — so a compromised dependency during `npm ci`, or a malicious step, could
-       exfiltrate it. Mitigate both: (a) the token is granular / automation / **publish-only /
-       single-package** (narrowest scope npm offers); and (b) gate the job behind a GitHub
-       **Environment with required reviewers** (repo Settings → Environments → e.g. `npm-publish`, add
-       yourself as a required reviewer, then `environment: npm-publish` on the `release` job) so the
-       secret is only exposed after a human approves that specific run. Best of all: **skip this phase
-       entirely** by going straight to Trusted Publishing once the package exists — then there is no
-       long-lived secret to scope or gate.
-   - **(Recommended hardening, once the package exists) npm Trusted Publishing (OIDC).** Configure a
-     *trusted publisher* on npmjs.com pointing at this repo + the `Release` workflow. Then the CI
-     publish authenticates via short-lived OIDC with **no long-lived secret at all** — the ideal for a
-     security tool. When this is in place, delete the `NODE_AUTH_TOKEN` env from `release.yml` and
-     revoke `NPM_TOKEN`.
-   > Provenance (`--provenance`) works with **either** path; it requires publishing from CI (a local
-   > `npm publish --provenance` cannot generate it), which is why the workflow, not a laptop, is the
-   > publisher.
+1. **The name is claimed.** `x402-spendguard` is published; the name is yours.
+2. **2FA is enabled** on the npm account (authorization + writes).
+3. **Authentication is Trusted Publishing (OIDC) — no long-lived token.** Configure once on npmjs.com:
+   the package page → **Settings → Trusted Publishers → GitHub Actions**, and enter:
+   - **Organization or user:** `x402spendguard`
+   - **Repository:** `x402-spendguard`
+   - **Workflow filename:** `release.yml` (filename only, not a path)
+   - **Environment:** leave blank (we do not gate on an Environment)
 
-## Cutting a release (when the version hold lifts)
+   The `Release` workflow's `publish` job then authenticates via short-lived **OIDC** (`id-token:
+   write`), with **no secret**; the provenance attestation rides the same OIDC token. The `publish` job
+   runs on Node 24 (Trusted Publishing needs npm ≥ 11.5.1) and with `--ignore-scripts`, so no
+   third-party code runs while the OIDC publish capability is live.
+   > **The bootstrap token (historical).** Trusted Publishing requires the package to already exist, so
+   > the *first* publish (`0.2.0`) was created with a one-time **classic automation token** in the repo
+   > secret `NPM_TOKEN`. Once `0.2.0` was live and Trusted Publishing configured, that token was
+   > **revoked on npm and deleted from the repo** (`gh secret delete NPM_TOKEN`) — there is no standing
+   > publish secret. That one-time token is the pattern to bootstrap any *brand-new* package.
+   > Provenance requires publishing from CI; a local `npm publish --provenance` cannot generate it.
 
-> **The very first firing — extra care, cheap insurance.** The first real publish is where a
-> misconfiguration is most likely and most expensive. Run it through the **Environment gate with
-> required reviewers** (approve that specific run by hand) *even if* you've also set up Trusted
-> Publishing. Once the first clean publish proves the pipeline end-to-end, relax the gate to whatever
-> steady state you prefer.
+## Cutting a release
 
 1. Ensure `main` is green (hermetic gate + e2e).
 2. Bump `version` in `package.json` (e.g., `0.1.4` → `0.2.0`).
