@@ -80,7 +80,7 @@ Read the code. That has always been the deal with a guard.
 
 ## Status
 
-**`v0.1.4` — feature-complete for v1, and hardened. Still source-only (not yet on npm).** The guard installs in front of a real `@x402` client and enforces at the moment a payment is signed; this release closes the last correctness gap and adds observability, integrity, and honesty. What's proven, live and in the suite:
+**`v0.2.0` — the first release on [npm](https://www.npmjs.com/package/x402-spendguard): `npm install x402-spendguard`, published from CI with a signed provenance attestation.** The guard installs in front of a real `@x402` client and enforces at the moment a payment is signed. What's proven, live and in the suite:
 
 - **Both x402 generations** (v1 and v2) — one guard, dispatched on the protocol version.
 - **Deny works in the wild** — a real `@x402` client driven through a genuine 402 is blocked on kill-switch / off-allowlist / over-cap, and reaches a signature *only* through the guarded (allowlist) route.
@@ -90,9 +90,9 @@ Read the code. That has always been the deal with a guard.
 - **Tamper-evident audit log** *(new)* — the decision log is a hash chain you can `verify()`; unkeyed by default, keyed HMAC if you supply a key.
 - **Owner-private, tamper-refusing at rest** *(new)* — the ledger is created `0o600` and refuses a world-writable file (Windows-guarded).
 
-The **publishable artifact is now built and pack-verified** — a single frozen public entry point, a `dist`-only build, and a test that packs the real tarball, installs it, and proves it imports and runs with no internal paths reachable. It is **not yet on npm**: the version is deliberately held until a property-test pass hardens the surface (a published API is a promise we make once). Until then, use it from source.
+**Now on npm, with provenance** *(new in 0.2.0)* — a single **frozen** public entry point (`import { … } from "x402-spendguard"`), a `dist`-only zero-dependency artifact, published from CI with a signed build attestation you can verify. The enforcement core is **property-tested** — six `fast-check` invariants (no-drain, fail-closed, binding soundness, clock monotonicity, hash-chain tamper-detection), each confirmed non-vacuous by mutation — and a **P0 cross-process over-allow, found before publish, is fixed** (ACCT-07; postmortem in [TEST_PLAN.md](TEST_PLAN.md) §9).
 
-Still **pre-alpha**: single-agent, testnet-validated, **not yet published to npm**, single-tenant trust model (see [THREAT_MODEL.md](THREAT_MODEL.md)). **Not for mainnet.** Zero runtime dependencies; `@x402` is an optional peer dependency.
+Still **pre-alpha** (`0.x` — nothing is stable, anything may change): single-agent, testnet-validated, single-tenant trust model (see [THREAT_MODEL.md](THREAT_MODEL.md)). **Not for mainnet.** Zero runtime dependencies; `@x402` is an optional peer dependency.
 
 ### Wiring it in (the shape)
 
