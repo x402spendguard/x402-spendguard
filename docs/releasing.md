@@ -20,10 +20,20 @@ These are the steps only the account owner can do; the workflow can't publish un
    Authentication). This protects interactive publishes and account changes.
 3. **Provide CI a publish credential — pick one:**
    - **(Baseline) A granular automation token.** npm → Access Tokens → Generate → *Granular*,
-     **scoped to only the `x402-spendguard` package**, **read+write**, short expiry, "bypass 2FA for
-     automation" (that is the token's purpose in CI). Add it to the repo as the Actions secret
+     **scoped to only the `x402-spendguard` package**, **read+write (publish)**, short expiry, "bypass
+     2FA for automation" (that is the token's purpose in CI). Add it to the repo as the Actions secret
      **`NPM_TOKEN`** (GitHub → repo Settings → Secrets and variables → Actions). Scope it minimally so
      a leaked token's blast radius is one package, not the account.
+     - **Required before the first real publish (token blast-radius, GAP 3):** while a long-lived
+       `NPM_TOKEN` exists it is in the environment of *every* step of the `release` job that runs
+       before `npm publish` — so a compromised dependency during `npm ci`, or a malicious step, could
+       exfiltrate it. Mitigate both: (a) the token is granular / automation / **publish-only /
+       single-package** (narrowest scope npm offers); and (b) gate the job behind a GitHub
+       **Environment with required reviewers** (repo Settings → Environments → e.g. `npm-publish`, add
+       yourself as a required reviewer, then `environment: npm-publish` on the `release` job) so the
+       secret is only exposed after a human approves that specific run. Best of all: **skip this phase
+       entirely** by going straight to Trusted Publishing once the package exists — then there is no
+       long-lived secret to scope or gate.
    - **(Recommended hardening, once the package exists) npm Trusted Publishing (OIDC).** Configure a
      *trusted publisher* on npmjs.com pointing at this repo + the `Release` workflow. Then the CI
      publish authenticates via short-lived OIDC with **no long-lived secret at all** — the ideal for a

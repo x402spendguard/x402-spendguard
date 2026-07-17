@@ -5,7 +5,8 @@ name: Release
 # version is currently HELD at 0.1.4 until the property-test pass lands (a published version is a
 # promise made once). Provenance (a signed build attestation via GitHub OIDC) lets a consumer verify
 # the tarball was built from this commit by this workflow — on-brand for a trust tool. The publish is
-# gated behind the SAME bar as green main, plus a guard that the tag matches package.json.
+# gated behind the SAME bar as green main, a guard that the tag matches package.json, AND a guard
+# that the tagged commit is actually on main (never publish an unreviewed commit under provenance).
 on:
   push:
     tags:
@@ -15,11 +16,33 @@ permissions:
   contents: read
   id-token: write # required for `npm publish --provenance` (OIDC build attestation)
 
+# Serialize releases: two tag pushes (or a re-run) must not race two `npm publish` calls. Never
+# cancel an in-flight publish midway.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so the on-main ancestry check can resolve the tagged commit
+
+      # SUPPLY-CHAIN GUARD (fail fast, first). A git tag can point at ANY commit — an unmerged or
+      # unreviewed branch, or one that reverted a security fix — and the gate below would happily pass
+      # it in isolation and publish it under a provenance attestation that VOUCHES for it. A trust tool
+      # must never sign-and-ship an unreviewed commit. Refuse unless the tagged commit is on main.
+      - name: Refuse to publish a commit that is not on main
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::tagged commit $GITHUB_SHA is not on origin/main — refusing to publish an unreviewed commit"
+            exit 1
+          fi
+          echo "tagged commit is on main ✓"
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
