@@ -5,7 +5,10 @@
   "type": "module",
   "license": "MIT",
   "author": "Kevin Brown <x402.spendguard@gmail.com>",
-  "repository": { "type": "git", "url": "git+https://github.com/x402spendguard/x402-spendguard.git" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/x402spendguard/x402-spendguard.git"
+  },
   "homepage": "https://github.com/x402spendguard/x402-spendguard#readme",
   "bugs": "https://github.com/x402spendguard/x402-spendguard/issues",
   "keywords": [
@@ -20,13 +23,18 @@
     "security",
     "guardrails"
   ],
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "//exports": "The barrel is the SOLE public path (PKG-02/04). No internal subpath and no wildcard, so a deep import throws ERR_PACKAGE_PATH_NOT_EXPORTED at runtime AND cannot type-resolve under nodenext — the 'sole path by construction' discipline of the signer wrap, applied to the package boundary.",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
     "./package.json": "./package.json"
   },
   "sideEffects": false,
@@ -52,6 +60,7 @@
     "@types/node": "^20.19.43",
     "@x402/core": "^2.18.0",
     "@x402/evm": "^2.18.0",
+    "fast-check": "^4.9.0",
     "typescript": "^5.4.0",
     "viem": "^2.55.0",
     "vitest": "^1.6.0"
@@ -61,7 +70,11 @@
     "@x402/evm": "^2.18.0"
   },
   "peerDependenciesMeta": {
-    "@x402/core": { "optional": true },
-    "@x402/evm": { "optional": true }
+    "@x402/core": {
+      "optional": true
+    },
+    "@x402/evm": {
+      "optional": true
+    }
   }
 }

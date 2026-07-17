@@ -91,6 +91,8 @@ These hold for *every* input:
 - **INV-8** — Every decision carries a stable, machine-readable reason code.
 - **INV-9** *(accounting)* — Concurrent evaluations never both consume budget that jointly exceeds a cap; spend is durable and monotonic under normal operation; a clock anomaly never increases available budget or extends a capability. **This invariant must be exercised against the *real* store under *generated* concurrent interleavings at depth — many commits × preemption, not only the pure engine or a handful of low-count races.** The ACCT-05 ABA (§9) lived precisely in the depth×contention corner that hand-written examples cannot reach: it does not exist until the version chain is long enough that cleanup reclaims a version a stalled writer still holds.
 
+**Implemented (fast-check).** `test/properties.test.ts` backs the pure-surface invariants with generated inputs: **INV-1** (no-drain over a random payment sequence — *the* property), **INV-2** (`parsePolicy` / `parseChallenge` / `parseAuthorization` never throw on arbitrary input), **INV-4** (binding soundness — any challenge↔authorization mismatch denies), and the **clock-monotonicity** clause of INV-9 (`applyWindow` never regresses `lastSeen` under any clock sequence). The *concurrent* clause of INV-9 is proven against the real store by the depth-stress e2e (§9), not here — a pure-engine property cannot reach the file-store race, which is the whole lesson of §9. Each property was confirmed non-vacuous (it fails against a deliberately broken engine). Remaining targets (INV-3/5/6/7/8, and hash-chain any-mutation-fails) are fast-follows.
+
 ---
 
 ## 7. Test vectors and fixtures
