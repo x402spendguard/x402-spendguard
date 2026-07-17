@@ -58,3 +58,8 @@ These are the steps only the account owner can do; the workflow can't publish un
   source, no maps, no tests. This is enforced by `files: ["dist"]`, the map-free build, and proved
   against a real tarball by `test/e2e/pack-install.e2e.test.ts` (PKG-01…05).
 - **No install-time code.** There is no `postinstall`; `prepack` (build) runs only when *we* pack.
+- **The GitHub Release is automated.** The `release-notes` job (after a successful publish) creates the
+  matching GitHub Release from this version's `CHANGELOG.md` section and attaches `TRACEABILITY.md`, so
+  npm and GitHub stay in sync. It marks the release **`--latest`** — correct for linear `0.x`/`1.x`
+  releasing. **If you ever maintain parallel release lines** (e.g. patch an old `1.x` after `2.x` is
+  out), `--latest` would mislabel the backport as latest; make it conditional at that point.
