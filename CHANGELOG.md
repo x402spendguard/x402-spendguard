@@ -5,6 +5,31 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). **This project is in `0.x` and is NOT
 stable — anything may change until `1.0.0` is earned.**
 
+## [Unreleased]
+
+Builds the **publishable artifact** and proves it — without publishing. A semver number is a promise
+made *at publish*, so the version is deliberately **held at 0.1.4**; the `0.2.0` bump and the actual
+`npm publish` follow the property-test pass. This slice makes "you can `npm install` it" *true and
+verified*, so that when we do publish, the surface is already the one we've committed to.
+
+### Added
+- **A single, frozen public API surface (`src/index.ts`).** One barrel is the *sole* entry — the
+  `exports` map exposes only `.`, so a deep import (`x402-spendguard/…/internal`) throws
+  `ERR_PACKAGE_PATH_NOT_EXPORTED` at runtime **and** cannot type-resolve under `nodenext` (the "sole
+  path by construction" discipline of the signer wrap, applied to the package boundary). The surface
+  is a **deliberate, minimal allowlist** — "don't break userspace": adding an export is a
+  conventionally-compatible minor change, removing one is a break, so we ship the minimum and a
+  build-failing freeze test (PKG-01) keeps it from drifting in on an unrelated change.
+- **A clean, `dist`-only build (`tsconfig.build.json`).** Emits compiled JS + declarations from `src`
+  only — never the test tree — rooted so output is `dist/index.js`. **No source maps** (a shipped map
+  would dangle against un-shipped source, or leak an absolute local path), zero runtime dependencies
+  carried through.
+- **A pack-and-install honesty gate (`test/e2e/pack-install.e2e.test.ts`).** Runs `npm pack`, unpacks
+  the real tarball into a throwaway `node_modules`, imports **only** the barrel and runs the guard,
+  then asserts a runtime deep-import throws, a **type** deep-import fails `tsc`, and the shipped file
+  list contains no `.ts`/`.map`/test code/secret. The integration proof behind the PKG-01…05 hermetic
+  requirements — the packaging analog of the cross-process smoke test.
+
 ## [0.1.4] — 2026-07-17
 
 Correctness, at-rest hardening, and honesty. Closes the last load-bearing correctness gap

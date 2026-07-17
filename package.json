@@ -4,19 +4,49 @@
   "description": "A spend firewall for AI agents making x402 payments. Enforces caps, allowlists, signature-integrity binding, and a kill switch before any payment is signed. Pre-alpha; v1 is anti-drain + signature integrity, EVM-only.",
   "type": "module",
   "license": "MIT",
-  "//files": "ALLOWLIST what a published tarball ships (allowlist > denylist — same lesson as the signer route-closure). Keeps network-capable test code (test/e2e imports node:http + fetch) OUT of the package, so the 'no egress' story holds for the ARTIFACT, not just src/. The full publish surface (dist/types/exports) is designed at the npm-publish gate; until then err toward shipping less.",
+  "author": "Kevin Brown <x402.spendguard@gmail.com>",
+  "repository": { "type": "git", "url": "git+https://github.com/x402spendguard/x402-spendguard.git" },
+  "homepage": "https://github.com/x402spendguard/x402-spendguard#readme",
+  "bugs": "https://github.com/x402spendguard/x402-spendguard/issues",
+  "keywords": [
+    "x402",
+    "ai-agents",
+    "agent-payments",
+    "spending-limit",
+    "spend-cap",
+    "firewall",
+    "eip-3009",
+    "stablecoin",
+    "security",
+    "guardrails"
+  ],
+  "engines": { "node": ">=20" },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "//exports": "The barrel is the SOLE public path (PKG-02/04). No internal subpath and no wildcard, so a deep import throws ERR_PACKAGE_PATH_NOT_EXPORTED at runtime AND cannot type-resolve under nodenext — the 'sole path by construction' discipline of the signer wrap, applied to the package boundary.",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "//files": "ALLOWLIST what a published tarball ships (allowlist > denylist — same lesson as the signer route-closure). dist ONLY: compiled JS + declarations, NO source and NO maps (PKG-03/05). This keeps the whole test tree (test/e2e imports node:http + fetch) and raw source OUT of the artifact, so 'no egress' holds for what a stranger installs, not just for src/. README/LICENSE/package.json are added by npm itself.",
   "files": [
-    "src"
+    "dist"
   ],
   "scripts": {
-    "build": "tsc",
+    "prebuild": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:e2e:funded": "vitest run --config vitest.e2e.config.ts test/e2e/funded-settle.e2e.test.ts",
     "test:e2e:smoke": "vitest run --config vitest.e2e.config.ts test/e2e/cross-process-smoke.e2e.test.ts",
-    "traceability": "vite-node scripts/gen-traceability.ts"
+    "test:e2e:pack": "vitest run --config vitest.e2e.config.ts test/e2e/pack-install.e2e.test.ts",
+    "traceability": "vite-node scripts/gen-traceability.ts",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run typecheck && npm test"
   },
   "devDependencies": {
     "@types/node": "^20.19.43",

@@ -123,8 +123,11 @@ Convention: each item names its **gate** (what must be true before it ships) and
 
 - **Property tests** (add `fast-check` as a dev dependency) and **full T1–T15 abuse-case coverage**
   against the threat model.
-- **npm-publish gate** — the SemVer 0.x publish milestone (D-020). Gated on the SDK adapter and
-  ACCT-05 being resolved-or-honestly-scoped.
+- **npm-publish gate** — the SemVer 0.x publish milestone (D-020). The **publishable artifact is
+  built + pack-verified (D-037)**: a frozen single-entry surface (`src/index.ts`), a `dist`-only
+  map-free build, and a pack-install honesty gate. The version is **held at 0.1.4** — the `0.2.0`
+  bump + `npm publish --provenance` follow the **property-test pass** (build-the-artifact →
+  property-test the pinned surface → publish).
 
 ## v2 / explicitly out of scope for v1
 

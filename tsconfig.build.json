@@ -1,0 +1,17 @@
+{
+  "//": "PUBLISH build (PKG-03). Emits the artifact from src ONLY — never the test tree — rooted at",
+  "//rootDir": "src so output is dist/index.js, not dist/src/index.js. Declarations ON; source and",
+  "//maps": "declaration maps OFF (a shipped map would dangle against un-shipped source or leak an",
+  "//leak": "absolute local path). The default tsconfig.json still compiles src+test for typecheck.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "declaration": true,
+    "declarationMap": false,
+    "sourceMap": false,
+    "noEmit": false
+  },
+  "include": ["src"],
+  "exclude": ["test", "scripts", "node_modules", "dist"]
+}

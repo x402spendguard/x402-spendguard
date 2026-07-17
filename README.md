@@ -90,6 +90,8 @@ Read the code. That has always been the deal with a guard.
 - **Tamper-evident audit log** *(new)* — the decision log is a hash chain you can `verify()`; unkeyed by default, keyed HMAC if you supply a key.
 - **Owner-private, tamper-refusing at rest** *(new)* — the ledger is created `0o600` and refuses a world-writable file (Windows-guarded).
 
+The **publishable artifact is now built and pack-verified** — a single frozen public entry point, a `dist`-only build, and a test that packs the real tarball, installs it, and proves it imports and runs with no internal paths reachable. It is **not yet on npm**: the version is deliberately held until a property-test pass hardens the surface (a published API is a promise we make once). Until then, use it from source.
+
 Still **pre-alpha**: single-agent, testnet-validated, **not yet published to npm**, single-tenant trust model (see [THREAT_MODEL.md](THREAT_MODEL.md)). **Not for mainnet.** Zero runtime dependencies; `@x402` is an optional peer dependency.
 
 ### Wiring it in (the shape)
