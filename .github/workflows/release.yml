@@ -96,3 +96,42 @@ jobs:
       # an unscoped package. --ignore-scripts: dist is already built, so skip prepack/prepublishOnly (the
       # gate already ran the suite on Node 20; this keeps vitest off Node 24 and runs no untrusted code).
       - run: npm publish --provenance --access public --ignore-scripts
+
+  # RELEASE NOTES — create the matching GitHub Release AFTER a successful publish, so npm and GitHub
+  # stay in sync (a git tag triggers the npm publish; the GitHub Release is a separate object). Isolated
+  # by design: `contents: write` ONLY (no id-token, no publish capability — it cannot touch the artifact,
+  # which npm already published + provenance-signed), it runs only AFTER the irreversible publish, and it
+  # executes only first-party tooling (checkout + awk + gh) — no dependency code while the write
+  # capability is live. If this job fails, it degrades to "create the Release by hand" (npm is unaffected).
+  release-notes:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # ONLY to create the GitHub Release — the least the gh API needs, nothing more
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create/refresh the GitHub Release from CHANGELOG.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # auto-provisioned, per-run, not a standing secret
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Extract THIS version's CHANGELOG section (body only, header stripped) for the release notes.
+          # Literal-prefix match on "## [<version>]" so a version's dots are never treated as regex.
+          awk -v h="## [$VERSION]" '
+            index($0, h) == 1 { f = 1; next }
+            f && /^## \[/ { exit }
+            f { print }
+          ' CHANGELOG.md > notes.md
+          sed -i '/./,$!d' notes.md # trim leading blank lines
+          if [ ! -s notes.md ]; then
+            echo "::error::no CHANGELOG section found for $VERSION — refusing to create an empty release"
+            exit 1
+          fi
+          # Idempotent (safe on a workflow re-run): edit if the release already exists, else create it.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --notes-file notes.md --latest
+            gh release upload "$GITHUB_REF_NAME" TRACEABILITY.md --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md --latest TRACEABILITY.md
+          fi
+          echo "GitHub Release $GITHUB_REF_NAME synced ✓"
