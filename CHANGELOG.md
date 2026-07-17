@@ -5,6 +5,46 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). **This project is in `0.x` and is NOT
 stable — anything may change until `1.0.0` is earned.**
 
+## [0.1.4] — 2026-07-17
+
+Correctness, at-rest hardening, and honesty. Closes the last load-bearing correctness gap
+(cross-process spend integrity), adds a read API and a tamper-evident audit log, hardens the
+ledger at rest, fixes a latent Windows brick, and writes down the trust model. Still pre-alpha,
+still source-only.
+
+### Added
+- **Cross-process spend integrity (ACCT-05).** The store is now a topology-agnostic versioned
+  **compare-and-swap** contract — two processes on one wallet's ledger can no longer both pass a
+  cap they jointly exceed (a losing writer is *told* it lost, instead of a silent last-write-wins
+  under-count). Genuine OS-atomic `link()`; refuses (fail-closed) a filesystem it can't prove
+  atomic, and NFS/SMB by name. **Validated across real separate OS processes.**
+- **`snapshot()` — a read-only, pull view of current spend vs. caps.** In-process, owner-only;
+  never transmits. Fails loud on an unreadable store rather than fabricating a zeroed view.
+- **Tamper-evident audit log.** The decision log is a hash chain (`seq` + prior-hash + payload-free
+  entry); `verify()` detects deletion/edit/reorder. Pluggable integrity seam — unkeyed SHA-256 by
+  default or a keyed HMAC you supply. Honest by construction: self-verify is a health check; a full
+  rewrite is caught only against an externally pinned head or in keyed mode (in the
+  `verify({expectedHead?})` signature). Failed writes surface to the operator; being forensic, not
+  enforcement, a broken chain never blocks a payment.
+- **Requirements-traceability matrix ([TRACEABILITY.md](TRACEABILITY.md)).** Every requirement →
+  its verifying test(s) → status, generated from the suite (`npm run traceability`) and CI-checked
+  so it can never drift from reality.
+
+### Security
+- **The spend ledger is owner-private and tamper-refusing at rest.** Created `0o600`; a
+  world-writable ledger is refused before its bytes are trusted. POSIX-only and — new — explicitly
+  **guarded on Windows**, where an unguarded check would have bricked the store into a deny-all.
+
+### Notes
+- **Trust model, stated.** The guard is as secure as the isolation boundary it runs inside; at-rest
+  hardening is *opportunistic*, never a substitute for that boundary, never a pretense where it
+  can't be delivered — the same true statement on every OS. A shared multi-user host wants a
+  hardened store, which the store interface lets you supply. (THREAT_MODEL §3.)
+- **Still source-only.** Feature-complete for v1's anti-drain + integrity scope, not yet on npm
+  (next chapter). Zero runtime dependencies; `@x402` stays an optional peer dependency. Fast-follows:
+  audit-log rotation, cross-process-log integrity, and confirming the Windows fix on a real Windows
+  runner (it's currently verified with a simulated platform, since CI runs on Linux).
+
 ## [0.1.3] — 2026-07-13
 
 The adapter is now **proven end to end on testnet**: the guard installs in front of a real

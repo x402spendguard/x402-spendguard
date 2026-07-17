@@ -55,13 +55,14 @@ Limits we hold ourselves to, stated up front:
 - **Fail closed.** Every ambiguous case — a policy error, an engine exception, a missing field — results in **deny**. A guard that fails open is not a guard.
 - **Mechanism, not policy.** The guard enforces the deterministic policy *you* write; it forms no opinions of its own. No heuristic "this looks suspicious" judgments — that would be the guard authoring policy — so, no anomaly detection.
 - **No egress.** The guard makes no network calls and ships no telemetry. Your payment data never leaves your machine. Absent, not opt-out. Read APIs like `snapshot()` are **pull, not push** — an in-process, owner-only view you request locally, never a sender; the guard is a data *source you control*. The copy it hands back is your private financial posture (including who you pay) — treat it with the same care as the ledger file.
-- **Trust model: your isolation boundary.** The guard is as secure as the container, sandbox, or VM it runs inside, and assumes no hostile process shares that boundary — one that does can read the signing key and defeat any in-process guard. Enforcement (caps, allowlist, binding, kill switch) is platform-agnostic and always on. At-rest hardening (file permissions today; a tamper-evident audit log next) is *opportunistic* — a bonus layer where your platform supports one, never a substitute for the isolation boundary, and never a pretense of protection where it can't be delivered. **The same true statement on every OS.** A genuinely shared multi-user host wants a hardened store, which the topology-agnostic store interface lets you supply — see [THREAT_MODEL.md](THREAT_MODEL.md).
+- **Trust model: your isolation boundary.** The guard is as secure as the container, sandbox, or VM it runs inside, and assumes no hostile process shares that boundary — one that does can read the signing key and defeat any in-process guard. Enforcement (caps, allowlist, binding, kill switch) is platform-agnostic and always on. At-rest hardening (file permissions, and a tamper-evident audit log) is *opportunistic* — a bonus layer where your platform supports one, never a substitute for the isolation boundary, and never a pretense of protection where it can't be delivered. **The same true statement on every OS.** A genuinely shared multi-user host wants a hardened store, which the topology-agnostic store interface lets you supply — see [THREAT_MODEL.md](THREAT_MODEL.md).
 - **Small, auditable core.** The security-critical logic is a pure function with zero runtime dependencies — small enough to read in one sitting.
 
 ## Documentation
 
 - **[THREAT_MODEL.md](THREAT_MODEL.md)** — adversaries, assets, trust boundary, and what we do and do not defend.
 - **[REQUIREMENTS.md](REQUIREMENTS.md)** — numbered, testable requirements, each traced to a threat and a test.
+- **[TRACEABILITY.md](TRACEABILITY.md)** — the requirements-traceability matrix: every requirement → its verifying test(s) → status. Generated from the suite (`npm run traceability`) and CI-checked so it can't drift.
 - **[TEST_PLAN.md](TEST_PLAN.md)** — testing methodology: how we prove the requirements hold.
 - **[SECURITY.md](SECURITY.md)** — how to report a vulnerability, and our disclosure commitment.
 - **[docs/decisions.md](docs/decisions.md)** — the decision record: what we chose, why, and what we rejected.
@@ -79,14 +80,17 @@ Read the code. That has always been the deal with a guard.
 
 ## Status
 
-**`v0.1.3` — the drop-in adapter is here, and proven end to end on testnet.** The guard is no longer just a core library: it installs in front of a real `@x402` client and enforces at the moment a payment is signed. What's proven, on live infrastructure:
+**`v0.1.4` — feature-complete for v1, and hardened. Still source-only (not yet on npm).** The guard installs in front of a real `@x402` client and enforces at the moment a payment is signed; this release closes the last correctness gap and adds observability, integrity, and honesty. What's proven, live and in the suite:
 
 - **Both x402 generations** (v1 and v2) — one guard, dispatched on the protocol version.
-- **Deny works in the wild** — a real `@x402` client driven through a genuine 402 is blocked on kill-switch / off-allowlist / over-cap, and reaches a signature *only* through the guarded route.
-- **Allow settles** — a policy-compliant payment, signed through the guard, is verified and settled **on-chain** by a real facilitator. Validated live on **Base Sepolia** (real USDC, real transaction) — and reproducible: run it yourself with a throwaway key and faucet USDC ([`test/e2e/FUNDED.md`](test/e2e/FUNDED.md)).
-- **The veto is the sole path to a signature** — the signer wrap is an *allowlist*, so no alternate signing method (present or future) can route around it.
+- **Deny works in the wild** — a real `@x402` client driven through a genuine 402 is blocked on kill-switch / off-allowlist / over-cap, and reaches a signature *only* through the guarded (allowlist) route.
+- **Allow settles** — a policy-compliant payment, signed through the guard, is verified and settled **on-chain** by a real facilitator. Validated live on **Base Sepolia** (real USDC, real transaction) — reproducible with a throwaway key and faucet USDC ([`test/e2e/FUNDED.md`](test/e2e/FUNDED.md)).
+- **Cross-process spend integrity** *(new in 0.1.4)* — two processes on one wallet's ledger can't both pass a cap they jointly exceed; validated across real separate OS processes (same host).
+- **`snapshot()` read API** *(new)* — a read-only, pull view of current spend vs. caps for a local dashboard; never transmits.
+- **Tamper-evident audit log** *(new)* — the decision log is a hash chain you can `verify()`; unkeyed by default, keyed HMAC if you supply a key.
+- **Owner-private, tamper-refusing at rest** *(new)* — the ledger is created `0o600` and refuses a world-writable file (Windows-guarded).
 
-Still **pre-alpha and testnet only**: single-agent, single-flow, not yet published to npm, and the single-process caveat above (ACCT-05) stands. **Not for mainnet.** Zero runtime dependencies; `@x402` is an optional peer dependency.
+Still **pre-alpha**: single-agent, testnet-validated, **not yet published to npm**, single-tenant trust model (see [THREAT_MODEL.md](THREAT_MODEL.md)). **Not for mainnet.** Zero runtime dependencies; `@x402` is an optional peer dependency.
 
 ### Wiring it in (the shape)
 

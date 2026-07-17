@@ -1,6 +1,6 @@
 {
   "name": "x402-spendguard",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "A spend firewall for AI agents making x402 payments. Enforces caps, allowlists, signature-integrity binding, and a kill switch before any payment is signed. Pre-alpha; v1 is anti-drain + signature integrity, EVM-only.",
   "type": "module",
   "license": "MIT",
@@ -15,7 +15,8 @@
     "test:watch": "vitest",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:e2e:funded": "vitest run --config vitest.e2e.config.ts test/e2e/funded-settle.e2e.test.ts",
-    "test:e2e:smoke": "vitest run --config vitest.e2e.config.ts test/e2e/cross-process-smoke.e2e.test.ts"
+    "test:e2e:smoke": "vitest run --config vitest.e2e.config.ts test/e2e/cross-process-smoke.e2e.test.ts",
+    "traceability": "vite-node scripts/gen-traceability.ts"
   },
   "devDependencies": {
     "@types/node": "^20.19.43",

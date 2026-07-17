@@ -7,22 +7,15 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { requiredTestNames as parseRequiredTestNames } from "../scripts/lib/requirements.js";
 
 const testDir = fileURLToPath(new URL("./", import.meta.url));
 const requirementsPath = fileURLToPath(new URL("../REQUIREMENTS.md", import.meta.url));
 
-/** Test names promised by REQUIREMENTS.md — the backticked kebab tokens in each table row's last cell. */
+/** Test names promised by REQUIREMENTS.md. Shared with the traceability-matrix generator
+ *  (scripts/gen-traceability.ts) so the enforced mapping and the published matrix cannot diverge. */
 function requiredTestNames(): Set<string> {
-  const md = readFileSync(requirementsPath, "utf8");
-  const names = new Set<string>();
-  for (const line of md.split("\n")) {
-    if (!/^\s*\|/.test(line)) continue; // table rows only
-    const cells = line.split("|").map((c) => c.trim());
-    const last = cells[cells.length - 1] === "" ? cells[cells.length - 2] : cells[cells.length - 1];
-    if (!last) continue;
-    for (const m of last.matchAll(/`([a-z][a-z0-9-]+)`/g)) names.add(m[1]);
-  }
-  return names;
+  return parseRequiredTestNames(readFileSync(requirementsPath, "utf8"));
 }
 
 /** Every test title declared via it(...) or it.todo(...) across the suite. */
