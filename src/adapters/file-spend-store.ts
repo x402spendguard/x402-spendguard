@@ -190,9 +190,30 @@ export class FileSpendStore implements SpendStore {
     throw new Error("could not obtain a stable ledger read (version files kept vanishing under cleanup)");
   }
 
+  /**
+   * The floor of RECLAIMED version numbers, derived (not stored) from the max: `cleanup` deletes
+   * versions `<= current - KEEP_VERSIONS` on every commit and never touches the top `KEEP_VERSIONS`,
+   * so at any instant every number `<= highestVersion() - KEEP_VERSIONS` has been (or will be)
+   * freed, and everything above still exists. A commit targeting a number at or below this floor is
+   * a stale writer whose target `cleanup` reclaimed — reject it (ACCT-07). Deriving the floor from
+   * the max means C stays correct even if `cleanup` lags, fails, or is disabled: the bound does not
+   * depend on cleanup having actually run.
+   */
+  private reclaimedFloor(): number {
+    return this.highestVersion() - KEEP_VERSIONS;
+  }
+
   async compareAndSave(expected: Version, next: SpendState): Promise<boolean> {
     const n = Number(expected);
-    const target = this.versionPath(n + 1);
+    const targetN = n + 1;
+    const target = this.versionPath(targetN);
+
+    // ACCT-07 floor guard (pre-link fast reject). `link`-EEXIST is only a valid CAS signal while a
+    // version number is unique-forever; `cleanup` frees numbers, so a stale writer could otherwise
+    // `link()` into a reclaimed hole and commit a spurious allow (the ABA). A target at or below the
+    // reclaimed floor is a stale writer — reject as a conflict without touching the disk.
+    if (targetN <= this.reclaimedFloor()) return false;
+
     // Write the full next state to a unique temp and fsync it, so the version file is COMPLETE
     // before it exists under its name (crash-safe), then atomically claim the name via link().
     const tmp = `${this.path}.tmp.${process.pid}.${randomUUID()}`;
@@ -218,12 +239,34 @@ export class FileSpendStore implements SpendStore {
       if ((err as NodeJS.ErrnoException).code === "EEXIST") return false; // version advanced → conflict
       throw err;
     }
+
+    // ACCT-07 floor guard (POST-link re-check — the load-bearing half). This closes the check→link
+    // race: if `cleanup` advanced the max past our target while we were writing/linking, our commit
+    // is an orphan far below the true max. `highestVersion()` is monotonic-nondecreasing (the top
+    // KEEP_VERSIONS are never deleted), so a post-link floor that now covers our target proves we
+    // reclaimed a hole. Retract it and report the conflict. This is SAFE — never a double-count —
+    // because an orphan `<= max - KEEP_VERSIONS` is below what any reader's `load()` can return, so
+    // no writer ever built a child on it; we only ever retract a proven orphan, never a live tip.
+    if (targetN <= this.reclaimedFloor()) {
+      try {
+        unlinkSync(target);
+      } catch {
+        /* best-effort */
+      }
+      try {
+        unlinkSync(tmp);
+      } catch {
+        /* best-effort */
+      }
+      return false;
+    }
+
     try {
       unlinkSync(tmp); // target is now a hardlink to the content; the temp name is no longer needed
     } catch {
       /* best-effort */
     }
-    this.cleanup(n + 1);
+    this.cleanup(targetN);
     return true;
   }
 

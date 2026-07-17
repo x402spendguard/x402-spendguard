@@ -123,6 +123,28 @@ describe("FileSpendStore CAS is immune to version-number reuse after cleanup (AC
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("cas-two-stale-writers-same-reclaimed-hole-both-rejected", async () => {
+    // The adversarial pair CHENG asked for: TWO writers both stalled at version 1, both targeting
+    // the SAME reclaimed hole (.v2). The floor guard must reject BOTH — neither may slip through by
+    // reclaiming the freed number. (The concurrent form of this runs in the depth-stress e2e; this
+    // deterministic form pins that both, not just the first, are conflicts.)
+    const dir = tmp();
+    try {
+      const store = new FileSpendStore(join(dir, "ledger"), NOW as UnixSeconds);
+      expect(await store.compareAndSave("0" as Version, emptyState(NOW))).toBe(true); // → .v1
+      const s1 = "1" as Version;
+      const s2 = "1" as Version; // a second writer that also loaded at v1 and stalled
+      for (const e of ["1", "2", "3", "4"]) {
+        expect(await store.compareAndSave(e as Version, emptyState(NOW))).toBe(true); // → .v5; reclaims 1,2
+      }
+      expect(readdirSync(dir).filter((f) => /ledger\.v\d+$/.test(f))).not.toContain("ledger.v2");
+      expect(await store.compareAndSave(s1, emptyState(NOW))).toBe(false);
+      expect(await store.compareAndSave(s2, emptyState(NOW))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("ledger file permissions (L2 — ACCT-06 integrity, PRIV-04 privacy)", () => {
