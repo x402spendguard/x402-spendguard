@@ -7,6 +7,18 @@ stable — anything may change until `1.0.0` is earned.**
 
 ## [Unreleased]
 
+### Fixed
+- **Cross-process over-allow under sustained contention (ACCT-07, the cleanup/CAS ABA).** A P0 in the
+  v0.1.4 spend store: the CAS committed by `link()`-ing to a version *number*, and the version GC
+  (`cleanup`) freed old numbers — so a writer stalled mid-commit could `link()` into a reclaimed
+  number and commit a **spurious `allow`** past the cap (one real over-cap payment; the durable
+  ledger stayed correct, so bounded, not a drain). Fixed with a **derived-floor guard**: a commit at
+  or below `highestVersion() − KEEP_VERSIONS` is rejected as a conflict, pre- and post-`link`. Proven
+  by a deterministic regression (red without the fix) and a depth×contention stress test with a
+  process that mechanically asserts the store's version never goes backwards. Found by the new
+  pack-install test's contention, before any publish or funds; postmortem + the process changes it
+  drove are in [TEST_PLAN.md](TEST_PLAN.md) §9.
+
 Builds the **publishable artifact** and proves it — without publishing. A semver number is a promise
 made *at publish*, so the version is deliberately **held at 0.1.4**; the `0.2.0` bump and the actual
 `npm publish` follow the property-test pass. This slice makes "you can `npm install` it" *true and
