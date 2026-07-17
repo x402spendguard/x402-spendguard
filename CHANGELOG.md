@@ -5,24 +5,15 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). **This project is in `0.x` and is NOT
 stable — anything may change until `1.0.0` is earned.**
 
-## [Unreleased]
+## [0.2.0] — 2026-07-17
 
-### Fixed
-- **Cross-process over-allow under sustained contention (ACCT-07, the cleanup/CAS ABA).** A P0 in the
-  v0.1.4 spend store: the CAS committed by `link()`-ing to a version *number*, and the version GC
-  (`cleanup`) freed old numbers — so a writer stalled mid-commit could `link()` into a reclaimed
-  number and commit a **spurious `allow`** past the cap (one real over-cap payment; the durable
-  ledger stayed correct, so bounded, not a drain). Fixed with a **derived-floor guard**: a commit at
-  or below `highestVersion() − KEEP_VERSIONS` is rejected as a conflict, pre- and post-`link`. Proven
-  by a deterministic regression (red without the fix) and a depth×contention stress test with a
-  process that mechanically asserts the store's version never goes backwards. Found by the new
-  pack-install test's contention, before any publish or funds; postmortem + the process changes it
-  drove are in [TEST_PLAN.md](TEST_PLAN.md) §9.
-
-Builds the **publishable artifact** and proves it — without publishing. A semver number is a promise
-made *at publish*, so the version is deliberately **held at 0.1.4**; the `0.2.0` bump and the actual
-`npm publish` follow the property-test pass. This slice makes "you can `npm install` it" *true and
-verified*, so that when we do publish, the surface is already the one we've committed to.
+**First release on npm.** `x402-spendguard` is now `npm install`-able — a frozen, single-entry public
+API, published from CI with a signed **provenance** attestation so a consumer can verify the tarball
+was built from this commit by this workflow. This release also closes a P0 concurrency defect caught
+(before any publish or funds) by the new packaging tests, and adds a mutation-proven property-test
+layer over the enforcement core. Still pre-alpha (`0.x`, nothing is stable), still EVM-only, still a
+seatbelt for an honest agent that can be lied to — **not** a wall against a compromised one. See
+[SECURITY.md](SECURITY.md); do not place it between an agent and a mainnet wallet.
 
 ### Added
 - **A single, frozen public API surface (`src/index.ts`).** One barrel is the *sole* entry — the
@@ -41,6 +32,34 @@ verified*, so that when we do publish, the surface is already the one we've comm
   then asserts a runtime deep-import throws, a **type** deep-import fails `tsc`, and the shipped file
   list contains no `.ts`/`.map`/test code/secret. The integration proof behind the PKG-01…05 hermetic
   requirements — the packaging analog of the cross-process smoke test.
+- **Property-based tests (`fast-check`, a dev-only dependency).** Generative coverage of the core
+  invariants — no-drain, fail-closed parsing, binding soundness, clock monotonicity, and hash-chain
+  any-mutation-fails (keyed+anchored) — over the pure engine and accounting. Each was confirmed
+  **non-vacuous by mutation** (it fails against a deliberately broken implementation). (TEST_PLAN §6.)
+- **An armed, hardened release pipeline (`.github/workflows/release.yml`).** Publishes on a `vX.Y.Z`
+  tag with `npm publish --provenance`, gated behind the full test suite (hermetic + the pack-install
+  and smoke-teeth e2e), and refusing to publish a commit that is **not on `main`** or a tag that
+  disagrees with `package.json`. Runbook + credential guidance in [docs/releasing.md](docs/releasing.md).
+
+### Fixed
+- **Cross-process over-allow under sustained contention (ACCT-07, the cleanup/CAS ABA).** A P0 in the
+  0.1.x spend store: the CAS committed by `link()`-ing to a version *number*, and the version GC
+  (`cleanup`) freed old numbers — so a writer stalled mid-commit could `link()` into a reclaimed
+  number and commit a **spurious `allow`** past the cap (one real over-cap payment; the durable
+  ledger stayed correct, so bounded, not a drain). Fixed with a **derived-floor guard**: a commit at
+  or below `highestVersion() − KEEP_VERSIONS` is rejected as a conflict, pre- and post-`link`. Proven
+  by a deterministic regression (red without the fix) and a depth×contention stress test with a
+  process that mechanically asserts the store's version never goes backwards. Found by the new
+  pack-install test's contention, before any publish or funds; postmortem + the process changes it
+  drove are in [TEST_PLAN.md](TEST_PLAN.md) §9.
+
+### Security
+- **The published artifact is `dist`-only and zero-runtime-dependency** — no source, no maps, no test
+  code (the only network-capable code in the repo), and **no install-time scripts** (no `postinstall`).
+  Proven against a real tarball by the pack-install gate. The `@x402` packages remain *optional peer*
+  dependencies. **Provenance** attestation on the published package ties the tarball to the reviewed
+  commit and the CI build; the release pipeline refuses to publish a commit that is not on `main`, so
+  the attestation never vouches for unreviewed code.
 
 ## [0.1.4] — 2026-07-17
 
