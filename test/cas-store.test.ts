@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, rmSync, statSync, chmodSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync, chmodSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SpendGuard, emptyState } from "../src/accounting/guard.js";
@@ -87,6 +87,38 @@ describe("FileSpendStore compare-and-swap (real link())", () => {
       // A second writer still holding the stale "0" version: ledger.v1 already exists → link EEXIST
       // → conflict (false), NEVER a last-write-wins overwrite. This is the ACCT-05 fix, on disk.
       expect(await store.compareAndSave(version, emptyState(NOW))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("FileSpendStore CAS is immune to version-number reuse after cleanup (ACCT-07, ABA)", () => {
+  it("cas-rejects-stale-writer-after-cleanup", async () => {
+    // The ABA that caused the P0 (TEST_PLAN §9): `cleanup` deletes old version files, freeing their
+    // NUMBERS. A writer that stalled while holding a now-old `expected` targets `.v{expected+1}`; if
+    // cleanup reclaimed that number, a naive `link()` SUCCEEDS into the hole — so link-EEXIST stops
+    // being a reliable conflict signal and the stale writer commits a spurious allow. A correct CAS
+    // MUST reject it (conflict), because `expected` is no longer current. This is the deterministic
+    // regression for that mechanism — no timing luck.
+    const dir = tmp();
+    try {
+      const store = new FileSpendStore(join(dir, "ledger"), NOW as UnixSeconds);
+      // A writer loads at version 1 and stalls, holding this token.
+      expect(await store.compareAndSave("0" as Version, emptyState(NOW))).toBe(true); // → .v1
+      const stale = "1" as Version;
+      // Meanwhile the ledger advances well past it, triggering cleanup (KEEP_VERSIONS=3 → deleting
+      // versions ≤ current-3): committing through .v5 reclaims the numbers 1 and 2.
+      for (const e of ["1", "2", "3", "4"]) {
+        expect(await store.compareAndSave(e as Version, emptyState(NOW))).toBe(true);
+      }
+      // Precondition: the stale writer's target (.v2) has been reclaimed by cleanup.
+      const files = readdirSync(dir).filter((f) => /ledger\.v\d+$/.test(f));
+      expect(files).not.toContain("ledger.v2");
+      // The stale writer resumes and commits. It is 4 versions behind; a correct CAS reports a
+      // CONFLICT (false), never a silent success into the reclaimed hole (which would be an
+      // over-allow — authorize() would return a spurious `allow`).
+      expect(await store.compareAndSave(stale, emptyState(NOW))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

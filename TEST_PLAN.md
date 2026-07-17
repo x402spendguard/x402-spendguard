@@ -89,7 +89,7 @@ These hold for *every* input:
 - **INV-6** — `evaluate()` is a pure function of its arguments; it reads no wall clock and no randomness internally.
 - **INV-7** — No decision path performs I/O or network egress.
 - **INV-8** — Every decision carries a stable, machine-readable reason code.
-- **INV-9** *(accounting)* — Concurrent evaluations never both consume budget that jointly exceeds a cap; spend is durable and monotonic under normal operation; a clock anomaly never increases available budget or extends a capability.
+- **INV-9** *(accounting)* — Concurrent evaluations never both consume budget that jointly exceeds a cap; spend is durable and monotonic under normal operation; a clock anomaly never increases available budget or extends a capability. **This invariant must be exercised against the *real* store under *generated* concurrent interleavings at depth — many commits × preemption, not only the pure engine or a handful of low-count races.** The ACCT-05 ABA (§9) lived precisely in the depth×contention corner that hand-written examples cannot reach: it does not exist until the version chain is long enough that cleanup reclaims a version a stalled writer still holds.
 
 ---
 
@@ -117,7 +117,29 @@ These hold for *every* input:
 
 ---
 
-## 9. Deferred
+## 9. Lessons from a P0 — concurrency invariants need *generated* interleavings, at depth
+
+This section is a durable postmortem, kept here because its lessons are process, not a one-time fix. It records a real over-allow (a violation of INV-9 / ACCT-05) that passed adversarial review **and** a full green suite, and the specific, nameable gaps that let it through — so the next slice near the concurrency core is reviewed and tested against them.
+
+**The bug (ACCT-05 CAS store, shipped in v0.1.4).** The file store commits spend with an OS-atomic compare-and-swap: `link()` the next state to `<ledger>.v<N+1>`, where `EEXIST` means "another writer won this version — conflict, retry." A separate `cleanup` step GCs old version files (`KEEP_VERSIONS = 3`). The two interact fatally: once the chain advances far enough, `cleanup` **deletes a version number a stalled in-flight writer still holds as its `expected`**. That writer's `link()` to the reclaimed hole then *succeeds* — so `link`-`EEXIST`, the CAS's entire conflict signal, silently stops being reliable (a classic **ABA**: the version number was reused after deletion). The stalled writer commits an orphan *below* the true max; `load()` (which reads the max) ignores it, so the **durable ledger stays correct** — but `compareAndSave` returned `true`, so `authorize()` returns a **spurious `allow`**: in production, one real over-cap payment that gets signed and settled. Bounded (one extra payment per occurrence, no compounding), but a genuine violation of the "two processes cannot both pass a cap they jointly exceed" claim. Caught **before publish, before mainnet, before funds** — by an unrelated pack-install test whose CPU contention randomly generated the interleaving, then proven **deterministically** and turned into the regression test.
+
+**Where it slipped, precisely — a scale-and-interaction blind spot, not sloppiness.** Every test we wrote and every adversarial race we ran exercised the CAS at **low version counts**: the smoke test had contention but few commits; the adversarial probes had a few writers but low depth; the unit tests had neither. The ABA *cannot occur* until a writer falls `KEEP_VERSIONS` behind mid-commit, which needs **depth (many commits) × contention (preemption mid-commit) simultaneously** — and no test had both. `cleanup` was reviewed for its *own* correctness (deletes the right files, crash-safe) but never for its *interaction* with the CAS's core precondition. Nobody asked: *what does deleting a version do to a writer still holding that version number?* The answer is visible by inspection — once the question is asked.
+
+**Three durable changes (ranked by leverage):**
+
+1. **Property/stress testing is a required layer for any slice that touches the concurrency core — not a later-chapter nicety — and it runs at depth against the *real* store, not the pure engine.** Example-based tests (ours, the adversarial races, the smoke teeth) each encode an interleaving *a human imagined*; the ABA lived in one nobody wrote. For concurrency invariants, adversarial examples are **necessary but provably insufficient** — you need a harness that *generates* interleavings you didn't conceive. A concurrency-stress property generating "many commits under contention with stalled writers" (INV-9, against `FileSpendStore`) would have found this **by construction**, at the ACCT-05 slice. This is the single highest-leverage change, and the retroactive proof that property-tests belong *alongside* a concurrency slice, not after it.
+
+2. **Review checklist — GC-meets-in-flight (general to any CAS + reclamation system).** When a slice adds a reclamation / cleanup / GC / rotation / pruning step to a system with optimistic concurrency, the review **must** ask explicitly: *"Can reclaiming X break an in-flight operation that still references X?"* Any compare-and-swap plus a garbage collector has this latent question — it is the ABA precondition, and the answer is usually visible by inspection. It is now a mandatory review item, not a thing we hope someone thinks of.
+
+3. **Adversarial concurrency passes run at sustained, production-like depth — not just correctness-demonstrating depth.** GC-vs-writer interactions only exist past a depth threshold; a few writers over a few commits proves the mechanism *works* without stressing the machinery (`cleanup`) that quietly becomes load-bearing under real traffic.
+
+**Meta-lesson — the boring maintenance code next to a security invariant is often *part of* the invariant.** `cleanup` was reviewed as housekeeping ("delete old files, best-effort, can't hurt"). It could hurt: it was silently the thing that broke the CAS's unique-version-forever precondition. The next time a slice adds an innocuous-looking GC/rotation/pruning step near the enforcement core, that is the flag to review it as **enforcement code, not plumbing**.
+
+**Calibration — the process did not fail; it caught this one layer later than ideal.** Defense-in-depth is *supposed* to have the CI/honest-test layer behind the review layer. This was caught before any real harm by an honest test written to prove something else, against a culture that left `main` red and proved the mechanism against its own work rather than burying it. The goal of tightening is to move the catch **earlier** next time — via the layer (property-testing at depth) and the question (GC-vs-in-flight) that convert "a human must imagine this interleaving" into "the machine generates it and the question is mandatory" — not to pretend example-based review of concurrency can ever be made perfect. It cannot; that ceiling is exactly why the other layers exist.
+
+---
+
+## 10. Deferred
 
 Test methodology for code that does not exist yet is evidence of nothing, and would mostly be wrong. The following are defined **when the code they describe exists**: adapter/integration testing (wire parsing, interposition actually blocking a real signing call, challenge↔struct correlation per ASM3), test phasing, specific tooling choices beyond the current runner ([vitest](https://vitest.dev)), and CI configuration.
 
