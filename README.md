@@ -58,6 +58,17 @@ Limits we hold ourselves to, stated up front:
 - **Trust model: your isolation boundary.** The guard is as secure as the container, sandbox, or VM it runs inside, and assumes no hostile process shares that boundary — one that does can read the signing key and defeat any in-process guard. Enforcement (caps, allowlist, binding, kill switch) is platform-agnostic and always on. At-rest hardening (file permissions, and a tamper-evident audit log) is *opportunistic* — a bonus layer where your platform supports one, never a substitute for the isolation boundary, and never a pretense of protection where it can't be delivered. **The same true statement on every OS.** A genuinely shared multi-user host wants a hardened store, which the topology-agnostic store interface lets you supply — see [THREAT_MODEL.md](THREAT_MODEL.md).
 - **Small, auditable core.** The security-critical logic is a pure function with zero runtime dependencies — small enough to read in one sitting.
 
+## Supply chain & capabilities
+
+**Zero runtime dependencies.** The published tarball is `dist` only — compiled JS and type declarations, no source, no maps, no bundled code. `@x402/core` and `@x402/evm` are *optional* peer dependencies you already run to make x402 payments; the guard structurally matches their types and imports **neither at runtime**. So a bare `npm install x402-spendguard` pulls in nothing else, and none of the x402 SDK's transitive tree (viem, etc.) is ours.
+
+A capability scanner (e.g. [Socket](https://socket.dev)) run against our own code will still flag two capabilities. Both are real, both are the product working as designed, and neither is network egress:
+
+- **Filesystem access** — by design. The spend ledger, the policy file, and the tamper-evident decision log are on local disk (`node:fs`). That is where cumulative caps and the audit trail live; there is nowhere else to keep them. The ledger is created **owner-private** (`0o600`) and reads only *your* files. Crucially, **there is no network capability paired with it** — nothing can exfiltrate what it reads.
+- **Network access** — real, but a *veto, not a caller.* The guard **wraps the `fetch` transport your client already uses** so it can see a 402 and record which host you chose to call, then enforce your caps before a payment is signed. It reads only the response `status` and passes the response through unchanged (`guardedFetch`, [src/adapters/x402-transport.ts](src/adapters/x402-transport.ts)); it also uses the `URL` constructor to parse a hostname for allowlist matching. It imports no network module and **originates no request of its own** — wrapping the transport is the entire mechanism of a firewall.
+
+This is the same claim as **No egress** above, stated at the level a scanner sees. Don't take our word for it — [read the code](src/); it's small on purpose.
+
 ## Documentation
 
 - **[THREAT_MODEL.md](THREAT_MODEL.md)** — adversaries, assets, trust boundary, and what we do and do not defend.
@@ -65,6 +76,7 @@ Limits we hold ourselves to, stated up front:
 - **[TRACEABILITY.md](TRACEABILITY.md)** — the requirements-traceability matrix: every requirement → its verifying test(s) → status. Generated from the suite (`npm run traceability`) and CI-checked so it can't drift.
 - **[TEST_PLAN.md](TEST_PLAN.md)** — testing methodology: how we prove the requirements hold.
 - **[SECURITY.md](SECURITY.md)** — how to report a vulnerability, and our disclosure commitment.
+- **[docs/verifying-releases.md](docs/verifying-releases.md)** — how to independently verify a release's signed provenance attestation (and a heads-up about a false alarm from older npm).
 - **[docs/decisions.md](docs/decisions.md)** — the decision record: what we chose, why, and what we rejected.
 - **[docs/roadmap.md](docs/roadmap.md)** — tracked future work and deferrals, each with its rationale and gate.
 - **[docs/x402-protocol-notes.md](docs/x402-protocol-notes.md)** — the x402 protocol facts a guard depends on, verified against source.
