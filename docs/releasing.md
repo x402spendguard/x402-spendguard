@@ -35,7 +35,10 @@ These are the steps only the account owner can do; the workflow can't publish un
 
 ## Cutting a release
 
-1. Ensure `main` is green (hermetic gate + e2e).
+1. Ensure `main` is green (hermetic gate + e2e), and run the
+   [doc audit checklist](doc-audit-checklist.md) — the docs-integrity gate is in `npm test`, but
+   the checklist covers the judgment classes (state-prose re-read, shipped author-notes,
+   citation locatability).
 2. Bump `version` in `package.json` (e.g., `0.2.1` → `0.2.2`).
 3. Move the `## [Unreleased]` block in `CHANGELOG.md` to `## [0.2.2] — <date>`.
 4. Commit: `release: v0.2.2 — <summary>`.
