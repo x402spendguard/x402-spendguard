@@ -122,8 +122,14 @@ Convention: each item names its **gate** (what must be true before it ships) and
 ## Cross-cutting (ongoing)
 
 - **Property tests — landed (0.2.x, D-038).** `fast-check` is a dev-dependency and the enforcement
-  core is fuzzed (nine property tests over eight invariants, mutation-proven). **Full T1–T15
-  abuse-case coverage** against the threat model remains the open item.
+  core is fuzzed (nine property tests over eight invariants, mutation-proven).
+- **Abuse-case axis (T1–T15) — landed + enforced (`c48a873`).** `test/abuse-cases.test.ts` stages one
+  attack per threat T1–T15 (deny + the correct reason code); a meta-gate whose source of truth is
+  THREAT_MODEL §5's threat→control table — cross-linked to the REQ→test axis via the shared
+  `scripts/lib/requirements.ts` parser, and fail-closed on a malformed table — turns the suite red if
+  any threat loses its staged test or a §5-named control is not a tested requirement. Deepening
+  specific composed attacks (the composition space is unbounded) is ongoing as the threat model grows,
+  not a named open gap.
 - **npm-publish — SHIPPED (D-020/D-037).** `x402-spendguard` is live on npm (latest `0.2.1`) with a
   signed **build provenance** attestation, published from CI on a `vX.Y.Z` tag by
   `.github/workflows/release.yml`, gated behind the
