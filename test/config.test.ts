@@ -33,7 +33,8 @@ function writePolicy(contents: string, mode = 0o600): string {
 }
 
 describe("config loader — CONF-01 (world-writable refusal)", () => {
-  it("rejects-world-writable-policy", () => {
+  it("rejects-world-writable-policy", (ctx) => {
+    if (process.platform === "win32") ctx.skip(); // PLAT-01: the world-writable refusal is skipped on Windows
     // A world-writable policy file could be tampered by any local user; refuse to load it.
     const path = writePolicy(JSON.stringify(validPolicyObject()), 0o666);
     const r = loadPolicyFile(path);

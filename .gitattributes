@@ -1,0 +1,3 @@
+# Normalize line endings to LF on every platform. The Windows CI runner must see the same bytes as
+# Linux — the doc-integrity and static source scanners are line-based and must not trip on CRLF.
+* text=auto eol=lf

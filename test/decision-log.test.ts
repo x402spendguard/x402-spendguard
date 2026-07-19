@@ -130,7 +130,8 @@ describe("FileDecisionLog — durable append-only JSONL seam", () => {
     expect(first.v).toBe(1); // schema version persisted on disk
   });
 
-  it("creates the log file owner-private (not group- or world-readable) — F2", async () => {
+  it("creates the log file owner-private (not group- or world-readable) — F2", async (ctx) => {
+    if (process.platform === "win32") ctx.skip(); // PLAT-01: owner-private mode is a POSIX-only guarantee
     // The log holds payees/amounts/origins/timing; a fresh log must not leak to other local
     // users. Mirror of CONF-01's world-writable refusal, on the read side.
     const path = join(dir, "perms.jsonl");
