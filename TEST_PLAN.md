@@ -69,7 +69,7 @@ We adopt test-driven development for the core: **write the failing test that sta
 A guard can pass every requirement in isolation and still let an attack through by composition. We cover two axes; neither substitutes for the other:
 
 1. **Requirement tests** — one or more per `[v1]` requirement. Test names are exactly the names in the requirements table.
-2. **Abuse-case tests** — one or more per threat **T1–T15**, staged as an attack, asserting deny *with the correct reason code*.
+2. **Abuse-case tests** — one or more per threat **T1–T15**, staged as an attack, asserting deny *with the correct reason code*. These live in `test/abuse-cases.test.ts`, and — like the requirement axis — the abuse-case axis is **enforced by its own meta-gate**, whose source of truth is [THREAT_MODEL.md](THREAT_MODEL.md) §5: it derives the threat set and each threat's controls from the §5 table, and turns the suite red if a threat loses its staged test, if a §5-named control is not a tested requirement (cross-linking to the REQ→test axis below through the threat model's own declared mapping), or if the §5 table is malformed (fail-closed — a reformatted table cannot pass vacuously green).
 
 **Traceability is enforced by a meta-test.** A dedicated test reads [REQUIREMENTS.md](REQUIREMENTS.md), extracts every `[v1]` requirement's named test, and asserts that test exists in the suite. A requirement whose test is missing turns the suite red. This is the mechanism that keeps requirements and tests from silently drifting apart, and it is why *a requirement that cannot name a test is not a requirement.* Traceability runs both directions: each test is tagged with the `REQ`/`T` id it discharges.
 
