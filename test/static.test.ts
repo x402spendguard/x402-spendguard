@@ -14,7 +14,9 @@ function srcFiles(dir = srcDir): [string, string][] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const p = `${dir}${entry.name}`;
     if (entry.isDirectory()) out.push(...srcFiles(`${p}/`));
-    else if (entry.name.endsWith(".ts")) out.push([p, readFileSync(p, "utf8")]);
+    // Return a forward-slash path so the "/adapters/" and "/policy/" classifiers are platform-independent
+    // (on Windows fileURLToPath yields backslashes); the read still uses the native `p`.
+    else if (entry.name.endsWith(".ts")) out.push([p.replace(/\\/g, "/"), readFileSync(p, "utf8")]);
   }
   return out;
 }
