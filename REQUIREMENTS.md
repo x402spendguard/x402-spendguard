@@ -14,7 +14,7 @@ Each requirement is:
 - traced to the **threat(s)** it answers (see [THREAT_MODEL.md §5](THREAT_MODEL.md#5-threats--controls)),
 - and paired with the **name of the test** that proves it.
 
-**A requirement that cannot name a test is not a requirement** — it is an open question, and it lives in [§ Open questions](#open-questions) below rather than getting an ID it has not earned. A future traceability test asserts that every `[v1]` requirement here is named by some test in the suite; a requirement without a test turns the suite red.
+**A requirement that cannot name a test is not a requirement** — it is an open question, and it lives in [§ Open questions](#open-questions) below rather than getting an ID it has not earned. The traceability test (`test/traceability.test.ts`) asserts that every `[v1]` requirement here is named by some test in the suite; a requirement without a test turns the suite red.
 
 **Governing principle — mechanism, not policy.** Every requirement below enforces a rule the *user* authored, deterministically. None of them require the guard to form its own judgment about what is "suspicious." A control that would require such a judgment (e.g. statistical anomaly detection) is out of scope by principle, not by schedule — see [THREAT_MODEL.md §6](THREAT_MODEL.md#6-non-goals).
 

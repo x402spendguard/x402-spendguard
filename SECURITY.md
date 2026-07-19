@@ -4,7 +4,7 @@
 
 ## Status: pre-alpha — please do not rely on this yet
 
-This project is under active development. The policy core exists; the payment-interception adapter does not. It cannot yet stop a real payment. Do not place it between an agent and a wallet holding funds you care about.
+This project is under active development. The full guard is implemented — policy engine, spend accounting, decision log, and the payment-interception adapter that vetoes at the signer — and it is **testnet-validated**: driven by a real `@x402` client, it blocks non-compliant payments and settles compliant ones on-chain (Base Sepolia, real USDC). But it is **pre-alpha** — single-agent, single-tenant, **not for mainnet.** Do not place it between an agent and a wallet holding funds you care about.
 
 ## Reporting a vulnerability
 
@@ -29,7 +29,7 @@ A guard's value is that you can check it. That obligation does not pause when th
 
 - The policy engine and its checks.
 - Spend accounting, the decision log, configuration loading.
-- The interception adapter (once it exists).
+- The interception adapter — the guarded signer and the transport wrap.
 - **Any case where the guard *allows* a payment the user's policy should have denied.** This is the core failure mode.
 - **Any case where the guard fails open** — an exception, a malformed input, or an unreachable store that results in `allow` rather than `deny`.
 - Any case where the guard **leaks the signed payment payload**, the payment header, or user data. The signed payload is a bearer capability; writing it anywhere is a vulnerability.

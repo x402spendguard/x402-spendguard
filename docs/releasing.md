@@ -1,14 +1,13 @@
 # Releasing to npm
 
-The publish pipeline is **armed but not fired.** `.github/workflows/release.yml` publishes to npm —
-with a signed **provenance** attestation — when a maintainer pushes a `vX.Y.Z` tag whose version
-matches `package.json`. Nothing ships automatically.
+`.github/workflows/release.yml` publishes to npm — with a signed **build provenance** attestation —
+when a maintainer pushes a `vX.Y.Z` tag whose version matches `package.json`. Nothing ships
+automatically; the tag is the trigger.
 
-**The version is deliberately HELD at `0.1.4`.** A published version number is a promise made once,
-so the `0.2.0` bump and the first publish wait on the **property-test pass** (fuzzing the enforcement
-core against inputs neither we nor a reviewer wrote — the last cheap moment before the surface
-becomes a public API). Do not tag a release until that lands. This ordering is why the P0 concurrency
-bug was caught *before* publish, not after: build the crate → property-test it → then ship it.
+The current published version is **`0.2.1`** (`git tag` / `package.json`). The first publish (`0.2.0`)
+and the property-test layer it waited on have both landed. That ordering — build the crate →
+property-test it → *then* ship — is why the P0 concurrency bug was caught **before** publish, not
+after.
 
 ## One-time npm-account setup (maintainer — required before the first publish)
 
@@ -37,13 +36,13 @@ These are the steps only the account owner can do; the workflow can't publish un
 ## Cutting a release
 
 1. Ensure `main` is green (hermetic gate + e2e).
-2. Bump `version` in `package.json` (e.g., `0.1.4` → `0.2.0`).
-3. Move the `## [Unreleased]` block in `CHANGELOG.md` to `## [0.2.0] — <date>`.
-4. Commit: `release: v0.2.0 — <summary>`.
+2. Bump `version` in `package.json` (e.g., `0.2.1` → `0.2.2`).
+3. Move the `## [Unreleased]` block in `CHANGELOG.md` to `## [0.2.2] — <date>`.
+4. Commit: `release: v0.2.2 — <summary>`.
 5. Tag and push the tag:
    ```bash
-   git tag v0.2.0
-   git push origin v0.2.0
+   git tag v0.2.2
+   git push origin v0.2.2
    ```
    The `Release` workflow runs the full gate (typecheck, hermetic tests, traceability-staleness, e2e
    with smoke teeth), verifies the tag matches `package.json`, then `npm publish --provenance

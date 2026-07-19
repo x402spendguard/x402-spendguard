@@ -121,10 +121,12 @@ Convention: each item names its **gate** (what must be true before it ships) and
 
 ## Cross-cutting (ongoing)
 
-- **Property tests** (add `fast-check` as a dev dependency) and **full T1–T15 abuse-case coverage**
-  against the threat model.
-- **npm-publish — SHIPPED (D-020/D-037).** `x402-spendguard@0.2.0` is live on npm with a **provenance**
-  attestation, published from CI on a `vX.Y.Z` tag by `.github/workflows/release.yml`, gated behind the
+- **Property tests — landed (0.2.x, D-038).** `fast-check` is a dev-dependency and the enforcement
+  core is fuzzed (nine property tests over eight invariants, mutation-proven). **Full T1–T15
+  abuse-case coverage** against the threat model remains the open item.
+- **npm-publish — SHIPPED (D-020/D-037).** `x402-spendguard` is live on npm (latest `0.2.1`) with a
+  signed **build provenance** attestation, published from CI on a `vX.Y.Z` tag by
+  `.github/workflows/release.yml`, gated behind the
   full suite + a tag↔version guard + an **on-`main` ancestry guard** (never publish an unreviewed commit
   under provenance). Auth is **Trusted Publishing (OIDC)** — a two-job workflow where `id-token` is
   scoped to a `publish` job that runs **no third-party code** (`--ignore-scripts`) while the OIDC

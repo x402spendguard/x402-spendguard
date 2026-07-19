@@ -143,9 +143,9 @@ This section is a durable postmortem, kept here because its lessons are process,
 
 ## 10. Deferred
 
-Test methodology for code that does not exist yet is evidence of nothing, and would mostly be wrong. The following are defined **when the code they describe exists**: adapter/integration testing (wire parsing, interposition actually blocking a real signing call, challenge↔struct correlation per ASM3), test phasing, specific tooling choices beyond the current runner ([vitest](https://vitest.dev)), and CI configuration.
+Test methodology for code that does not exist yet is evidence of nothing, and would mostly be wrong; so it is defined **when the code it describes exists.** Several items once listed here have since landed and moved into the sections above — adapter/integration testing (wire parsing, interposition actually blocking a real signing call, challenge↔struct correlation per ASM3; see `test/x402-wire.test.ts`, `test/x402-guarded-signer.test.ts`, `test/x402-binding.test.ts`), CI configuration (`.github/workflows/ci.yml`, `release.yml`), and property-based testing. What remains genuinely deferred is test phasing and tooling choices beyond the current runner ([vitest](https://vitest.dev)).
 
-Note that a property-testing library will be a **dev**-dependency; this does not violate DEP-01, which constrains *runtime* dependencies in the core only.
+The property-testing library (`fast-check`) is a **dev**-dependency; this does not violate DEP-01, which constrains *runtime* dependencies in the core only.
 
 ---
 

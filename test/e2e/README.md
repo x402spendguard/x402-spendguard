@@ -27,13 +27,25 @@ The signer is a **canary** that records which route was reached and never produc
 signature. Because the deny path never signs, there is **no key and no funds** involved — the
 suite is fully hermetic (localhost, ephemeral port, no secrets, no external network).
 
-```
-npm run test:e2e
+```bash
+npm run test:e2e             # runs the full hermetic e2e set (below); the funded suite self-skips
 ```
 
-It lives under `test/e2e/` (never imported by `src/`), so the static no-egress proof over `src/`
-is untouched, and it runs in its own vitest config + a separate CI job — **never** the default
-`npm test` green-main gate.
+`npm run test:e2e` runs the whole e2e config, not just the deny path — the other hermetic suites are:
+
+- **Cross-process spend integrity** — [`cross-process-smoke.e2e.test.ts`](./cross-process-smoke.e2e.test.ts)
+  and [`cross-process-stress.e2e.test.ts`](./cross-process-stress.e2e.test.ts): real separate OS
+  processes race one wallet's ledger; exactly the cap is admitted and the durable ledger records every
+  allow (CI sets `SMOKE_TEETH=1`, so a non-CAS last-write-wins store would over-admit and fail).
+- **Supply-chain / packaging** — [`pack-install.e2e.test.ts`](./pack-install.e2e.test.ts): packs the
+  real tarball, installs it into a throwaway consumer, and asserts the frozen public surface and
+  `dist`-only contents (PKG-01…05).
+
+(Dedicated scripts also exist: `npm run test:e2e:smoke`, `npm run test:e2e:pack`.)
+
+The whole harness lives under `test/e2e/` (never imported by `src/`), so the static no-egress proof
+over `src/` is untouched, and it runs in its own vitest config + a separate CI job — **never** the
+default `npm test` green-main gate.
 
 ## The funded settle path (opt-in, real value)
 
