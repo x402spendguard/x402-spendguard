@@ -216,8 +216,11 @@ it("T11 · a decision written to the REAL on-disk log leaks no nonce, payer, or 
 
 it("T12 · a full decision performs no network egress at runtime (fetch is never invoked)", () => {
   // Dynamic complement to the STATIC no-egress proof (PRIV-01/03, static.test.ts, which owns the
-  // real guarantee): a trip-wire fetch that throws if called. A decision that phoned home would
-  // trip it; it doesn't. Cheap runtime witness that the statically-absent egress is also runtime-absent.
+  // real guarantee by failing the build on a socket-capable import). This trip-wire covers the one
+  // vector the static import-scan structurally CANNOT see: `fetch` is ambient on `globalThis` in
+  // modern Node with no import to flag, so a decision reaching the global `fetch` would leave no
+  // static trace. A trip-wire fetch that throws catches exactly that path. Thin (evaluate is pure),
+  // but a non-redundant runtime witness for an egress route the static proof cannot reach.
   const original = globalThis.fetch;
   let called = false;
   globalThis.fetch = (() => {
