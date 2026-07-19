@@ -112,8 +112,10 @@ Convention: each item names its **gate** (what must be true before it ships) and
   Surfaced by Kevin's "what about Windows users?" question. **Still owed:** verification on real
   Windows (can't from Linux/WSL2), and the deferred *uniform dir-perm pass* noted under L2.
 
-- **CONF-02 — name the policy-parse behavior as a requirement.** `parsePolicy`'s parse-into-`Policy`
-  contract is tested but has no requirement ID. **Gate: Kevin ratifies.** (D-024.)
+- **CONF-02 — name the policy-parse behavior as a requirement. DONE (ratified 2026-07-19).**
+  `parsePolicy`'s parse-into-`Policy` contract now carries requirement id CONF-02 — the parse-contract
+  half of CONF-01's safe-load story (CONF-01 gates provenance, CONF-02 gates content: parse, don't
+  validate; no silent defaults) — verified by `parse-into-trustworthy-policy`. (D-024.)
 
 - **Surface audit-write failures (operationally). DONE (D-036).** Folded into the audit-log slice: an
   injected `onAuditFailure` on `LoggingGuard` surfaces a failed append (and a torn head) to the

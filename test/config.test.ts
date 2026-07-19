@@ -78,6 +78,28 @@ describe("config loader — I/O failures fail closed", () => {
 });
 
 describe("parsePolicy — parse, don't validate (untrusted JSON → trustworthy Policy)", () => {
+  it("parse-into-trustworthy-policy", () => {
+    // CONF-02, the load-bearing contract in one place: parse untrusted JSON into a trustworthy
+    // Policy — brand + canonicalize on accept, reject-with-reason (never default) on anything broken.
+    // The per-field cases below are the detailed coverage; this is the named requirement anchor.
+    const ok = parsePolicy(validPolicyObject());
+    expect(ok.ok).toBe(true);
+    if (ok.ok) {
+      expect(typeof ok.value.caps[key].global).toBe("bigint"); // money branded, not left a string/number
+      expect(ok.value.maxAuthLifetimeSeconds).toBe(3_600n); // time branded through the primitive
+      expect(ok.value.caps[key].perRequest).toBe(500_000n); // cap key canonicalized to the assetKey coordinate
+    }
+    // Reject, never DEFAULT: a partial policy missing `halt` must be refused, not silently defaulted
+    // to halt=false (which would quietly weaken the guard). No code-side default fills the gap.
+    const { halt: _omit, ...missingHalt } = validPolicyObject();
+    const partial = parsePolicy(missingHalt);
+    expect(partial.ok).toBe(false);
+    if (!partial.ok) expect(partial.reason).toBe("config.halt_invalid");
+    // Reject, never COERCE: a wrong-typed money value (a bare JSON number) is refused, not truncated.
+    const wrongType = { ...validPolicyObject(), caps: { [`${CHAIN}|${USDC}`]: { perRequest: 500000, perDomain: "5", global: "20" } } };
+    expect(parsePolicy(wrongType).ok).toBe(false);
+  });
+
   it("accepts a well-formed policy and brands its money as bigint", () => {
     const r = parsePolicy(validPolicyObject());
     expect(r.ok).toBe(true);
