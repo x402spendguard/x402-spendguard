@@ -49,16 +49,16 @@ return deny("spend.contention", "...")           // bounded retry exhausted → 
   there are **zero CAS conflicts in-process → zero false-denies in the committed one-instance-per-
   wallet topology.** CAS only arbitrates the cross-process case (rare for that topology), where it
   fails **closed and loud** — never the silent surprise. This is the reconciliation of the earlier
-  "rare deny" objection (see [state-topology memory]; D-031).
+  "rare deny" objection (see D-031).
 
 ## The file mechanism (`FileSpendStore`)
 
-State lives in **version-named files** `ledger.<N>` (N a monotonic integer).
+State lives in **version-named files** `<path>.v<N>` (e.g. `ledger.v3`; N a monotonic integer).
 
 - **`load()`** → read the highest `N` present (empty at N=0 if none); return `{state, version: N}`.
 - **`compareAndSave(N, next)`** → write `next` to a unique temp, `fsync`, then **`link(temp,
-  "ledger.<N+1>")`**. `link` is an atomic create-or-`EEXIST`: exactly one of two racing writers wins
-  `ledger.<N+1>`, the loser gets `EEXIST` → return `false`. Temp is complete before the link → both
+  "<path>.v<N+1>")`**. `link` is an atomic create-or-`EEXIST`: exactly one of two racing writers wins
+  `<path>.v<N+1>`, the loser gets `EEXIST` → return `false`. Temp is complete before the link → both
   crash-safe *and* atomically-CAS. On success: unlink temp, run cleanup, return `true`.
   **This is a genuine OS-atomic create — never read-check-write.** (Criterion 1.)
 

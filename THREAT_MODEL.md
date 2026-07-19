@@ -141,7 +141,7 @@ The EIP-3009 signature already pins recipient, amount, and nonce. So a payer can
 
 **Scoping statement.** The signature protects the payer against theft; the only ways a payer overspends *beyond policy* are wrong-destination / wrong-amount / too-many / too-long, and the caps, allowlist, and binding checks cover exactly those. The replay/front-running/reorg/cache/denial family is real and important, but it harms the resource server, or it is griefing, or it is misdelivery — none of it makes the payer's wallet lighter than policy allows. A client-side guard structurally cannot fix server-side idempotency or CDN caching, and should not pretend to.
 
-**Boundary line:** *we guard what leaves the wallet, not what the wallet receives in return.* "Paid for A, got B" is misdelivery, and it is out of role (see [§10](#10-residual-risk-and-out-of-role)).
+**Boundary line:** *we guard what leaves the wallet, not what the wallet receives in return.* "Paid for A, got B" is misdelivery, and it is out of role (see [§9](#9-residual-risk-and-out-of-role)).
 
 The server-, facilitator-, discovery-, and chain-layer attacks above belong to a **protocol- and ecosystem-level** threat model — owned by the resource server, the facilitator, and the chain — not by a client-side guard. We scope deliberately to the wallet's edge and leave those layers to the parties that control them.
 
@@ -151,7 +151,7 @@ The server-, facilitator-, discovery-, and chain-layer attacks above belong to a
 
 For a guard, the boundary is a deliverable. v1 explicitly does **not**:
 
-- **Claim to be more enforceable than any other client-side guard.** Adversary A5 (an agent holding the wallet) calls the signer directly and bypasses any in-process guard identically. We provide better *visibility* into what is about to be signed, not more *authority* over whether it is signed. This sentence belongs in the README verbatim, or the README oversells.
+- **Claim to be more enforceable than any other client-side guard.** Adversary A5 (an agent holding the wallet) calls the signer directly and bypasses any in-process guard identically. We provide better *visibility* into what is about to be signed, not more *authority* over whether it is signed.
 - **Defend against a compromised agent process (A5)** — the class with the largest documented real-world losses. That is the "walk / run" rung of a longer roadmap (a key-holding local daemon; on-chain delegation), not v1.
 - **Support non-EVM chains or non-`exact` schemes in v1.** v1 is EIP-3009 `exact` on EVM only (ASM5). Solana/SVM and the `upto` scheme are denied with a clear reason and deferred to v2.
 - **Do anything after settlement.** Irreversibility is the premise of the tool.
