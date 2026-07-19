@@ -2,8 +2,8 @@
 
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and versions follow
-[Semantic Versioning](https://semver.org/). **This project is in `0.x` and is NOT
-stable — anything may change until `1.0.0` is earned.**
+[Semantic Versioning](https://semver.org/). **This project is `0.x` (pre-1.0): the public API may change between releases, and it is
+not yet production-ready.**
 
 ## [0.2.1] — 2026-07-17
 
@@ -20,11 +20,11 @@ through the **tokenless OIDC pipeline** (Trusted Publishing + provenance, auto-c
 
 ## [0.2.0] — 2026-07-17
 
-**First release on npm.** `x402-spendguard` is now `npm install`-able — a frozen, single-entry public
-API, published from CI with a signed **provenance** attestation so a consumer can verify the tarball
+**First release on npm.** `x402-spendguard` is now `npm install`-able — a single frozen entry point (one public
+import path), published from CI with a signed **provenance** attestation so a consumer can verify the tarball
 was built from this commit by this workflow. This release also closes a P0 concurrency defect caught
 (before any publish or funds) by the new packaging tests, and adds a mutation-proven property-test
-layer over the enforcement core. Still pre-alpha (`0.x`, nothing is stable), still EVM-only, still a
+layer over the enforcement core. Still pre-alpha (`0.x` — the API may change between releases), still EVM-only, still a
 seatbelt for an honest agent that can be lied to — **not** a wall against a compromised one. See
 [SECURITY.md](SECURITY.md); do not place it between an agent and a mainnet wallet.
 
@@ -100,9 +100,10 @@ still source-only.
   so it can never drift from reality.
 
 ### Security
-- **The spend ledger is owner-private and tamper-refusing at rest.** Created `0o600`; a
-  world-writable ledger is refused before its bytes are trusted. POSIX-only and — new — explicitly
-  **guarded on Windows**, where an unguarded check would have bricked the store into a deny-all.
+- **The spend ledger is protected at rest.** It is created owner-only (`0o600`), and the guard
+  refuses to trust a world-writable ledger file — one anyone could tamper with to reset your spend.
+  These are POSIX permission checks; on Windows, which uses ACLs rather than Unix mode bits, they are
+  **skipped**, because applying them there would wrongly refuse every ledger and disable the store.
 
 ### Notes
 - **Trust model, stated.** The guard is as secure as the isolation boundary it runs inside; at-rest
@@ -148,8 +149,10 @@ on Base Sepolia. Both x402 generations, and a hardened veto. Still pre-alpha, st
 ### Notes
 - **Testnet, single-agent, single-flow.** This validates the guard is correctly positioned in a
   real settlement flow. It does not cover cumulative spend across concurrent flows, non-EVM
-  chains, the `upto` scheme, or mainnet — all still explicitly out of scope. Zero runtime
-  dependencies remains true; `@x402` stays an optional peer dependency.
+  chains, the `upto` scheme, or mainnet — none of these are addressed at this milestone (what is
+  deferred to a later version vs. permanently out of scope is tracked in
+  [docs/roadmap.md](docs/roadmap.md)). Zero runtime dependencies remains true; `@x402` stays an
+  optional peer dependency.
 
 ## [0.1.2] — 2026-07-11
 
