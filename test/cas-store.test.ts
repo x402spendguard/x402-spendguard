@@ -148,7 +148,8 @@ describe("FileSpendStore CAS is immune to version-number reuse after cleanup (AC
 });
 
 describe("ledger file permissions (L2 — ACCT-06 integrity, PRIV-04 privacy)", () => {
-  it("ledger-created-owner-private", async () => {
+  it("ledger-created-owner-private", async (ctx) => {
+    if (process.platform === "win32") ctx.skip(); // PLAT-01: 0o600 creation is a POSIX-only guarantee
     // PRIV-04: version files hold spend amounts, origins, and the counterparty graph — created
     // owner-only (0o600), the mirror of the decision log. Not world-readable at rest.
     const dir = tmp();
@@ -163,7 +164,8 @@ describe("ledger file permissions (L2 — ACCT-06 integrity, PRIV-04 privacy)", 
     }
   });
 
-  it("ledger-refuses-world-writable", async () => {
+  it("ledger-refuses-world-writable", async (ctx) => {
+    if (process.platform === "win32") ctx.skip(); // PLAT-01: the world-writable refusal is skipped on Windows
     // ACCT-06: a world-writable ledger could be silently rewritten by any local user to reset spend
     // (→ drain). load() must REFUSE it — checking permissions BEFORE trusting the (possibly tampered)
     // bytes, the exact CONF-01 ordering. Scoped to the world-write bit only.

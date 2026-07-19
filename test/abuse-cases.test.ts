@@ -250,7 +250,8 @@ it("T14 · a server redirect cannot mint a fresh per-domain budget bucket", asyn
   expect(ctx.consume().origin).toBe("shop.example"); // NOT evil-cdn.example
 });
 
-it("T15 · a world-writable policy file is refused before its bytes are trusted", () => {
+it("T15 · a world-writable policy file is refused before its bytes are trusted", (ctx) => {
+  if (process.platform === "win32") ctx.skip(); // PLAT-01: the refusal is a POSIX-only guarantee (no-op on Windows)
   // A local user who can rewrite policy.json could disable the guard. A world-writable policy is
   // refused on load, a deterministic startup gate (POSIX; a no-op on Windows per PLAT-01).
   const dir = mkdtempSync(join(tmpdir(), "spendguard-abuse-t15-"));

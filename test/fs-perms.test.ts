@@ -18,11 +18,13 @@ afterEach(() => {
 
 describe("POSIX perm gates are guarded for Windows (PLAT-01)", () => {
   it("modeIsWorldWritable honors 0o002 on POSIX but never on win32", () => {
-    // On the real (POSIX) test platform the world-write bit is honored…
+    // POSIX: the world-write bit is honored. Faked explicitly so the assertion holds on ANY host
+    // (including the Windows CI runner), not only when the test happens to run on a POSIX box.
+    setPlatform("linux");
     expect(modeIsWorldWritable(0o666)).toBe(true);
     expect(modeIsWorldWritable(0o644)).toBe(false);
     expect(modeIsWorldWritable(0o600)).toBe(false);
-    // …but on Windows, where Node synthesizes 0o666 for a normal writable file, it must NOT fire —
+    // Windows: where Node synthesizes 0o666 for a normal writable file, it must NOT fire —
     // else the perm gates refuse every file and brick into a deny-all.
     setPlatform("win32");
     expect(modeIsWorldWritable(0o666)).toBe(false);
