@@ -47,7 +47,7 @@ The witness binds the **receiver and a time window — not the resource, URL, or
 
 **Permit2 is not the default.** The default is `eip3009`; only tokens lacking EIP-3009 opt into Permit2. All mainstream USDC deployments use EIP-3009.
 
-> A separately-authored ecosystem analysis characterized the Permit2 path as binding the "receiver/resource" on-chain. From source, that is **half-true and misleading**: it binds the *receiver* (which EIP-3009 also does), not the *resource*. Our pre-sign binding checks remain necessary on the Permit2 path. We note this as an example of why claims about the protocol should be checked against source.
+> A claim about the Permit2 path — that it binds the "receiver/resource" on-chain — is, from source, **half-true and misleading**: it binds the *receiver* (which EIP-3009 also does), not the *resource*. Our pre-sign binding checks remain necessary on the Permit2 path. We note this as an example of why claims about the protocol should be checked against source.
 
 ## 5. The `upto` scheme — the server picks the charge
 

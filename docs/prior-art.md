@@ -39,9 +39,11 @@ We looked hard at this one because it is the closest TypeScript analogue by name
 
 *(If Sentinel has changed materially since v0.2.0, this section is out of date — corrections welcome.)*
 
-## An ecosystem-scope threat model (separately authored)
+## Ecosystem-scope attacks are out of this tool's scope
 
-During design we reviewed a comprehensive threat model of x402 *as a protocol/ecosystem* — server, facilitator, discovery, chain, and economic layers. It is a useful, broadly accurate companion to our tool-scope model, and much of its content concerns layers a client-side guard cannot reach (see [THREAT_MODEL.md §5a](../THREAT_MODEL.md#5a-which-documented-x402-attacks-are-in-scope)). One of its claims — that x402's Permit2 path binds the *resource* on-chain — we checked against source and found to be about the *receiver*, not the resource (see [x402-protocol-notes.md §4](x402-protocol-notes.md#4-permit2-does-not-close-the-resource-gap)). We credit it as the ecosystem-scope counterpart to this project and note the correction in the spirit of checking claims against source.
+Much of the x402 attack surface lives at the **protocol and ecosystem layers** — server, facilitator, discovery, chain, and economic — which a client-side guard structurally cannot reach (see [THREAT_MODEL.md §5a](../THREAT_MODEL.md#5a-which-documented-x402-attacks-are-in-scope) for the in-scope/out-of-scope mapping). We scope to the wallet's edge and leave those layers to the parties that own them.
+
+One ecosystem-layer claim is worth flagging: that x402's Permit2 path binds the *resource* on-chain. Checked against source, it binds the *receiver* (which EIP-3009 also does), not the resource — so our pre-sign binding checks remain necessary on that path (see [x402-protocol-notes.md §4](x402-protocol-notes.md#4-permit2-does-not-close-the-resource-gap)). We note it in the spirit of checking claims against source.
 
 ---
 

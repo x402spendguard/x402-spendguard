@@ -143,7 +143,7 @@ The EIP-3009 signature already pins recipient, amount, and nonce. So a payer can
 
 **Boundary line:** *we guard what leaves the wallet, not what the wallet receives in return.* "Paid for A, got B" is misdelivery, and it is out of role (see [§10](#10-residual-risk-and-out-of-role)).
 
-This document's *protocol/ecosystem* companion analysis (a separately-authored threat model of x402 as a whole) covers the server-, facilitator-, discovery-, and chain-layer attacks in depth; we credit it as the ecosystem-scope counterpart to this tool-scope model.
+The server-, facilitator-, discovery-, and chain-layer attacks above belong to a **protocol- and ecosystem-level** threat model — owned by the resource server, the facilitator, and the chain — not by a client-side guard. We scope deliberately to the wallet's edge and leave those layers to the parties that control them.
 
 ---
 
