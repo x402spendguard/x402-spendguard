@@ -163,6 +163,23 @@ export class FileSpendStore implements SpendStore {
   }
 
   async load(): Promise<{ state: SpendState; version: Version }> {
+    // ACCT-08: refuse a world-writable ledger DIRECTORY before trusting (or picking) any version file.
+    // Directory-write governs create/rename, so a world-writable dir lets any local user PLANT a forged
+    // higher-version file that highestVersion() would then pick — even a 0o600 planted file passes the
+    // per-file ACCT-06 check. Sticky-blind: the sticky bit stops delete/rename but NOT create, so it does
+    // not close this plant vector. World-only per the single-tenant trust model; POSIX-only (PLAT-01).
+    // A missing dir (no ledger yet) is not refused — the check applies only to an existing directory.
+    let dirMode: number | undefined;
+    try {
+      dirMode = statSync(this.dir).mode;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err; // a real stat error → fail-closed
+    }
+    if (dirMode !== undefined && modeIsWorldWritable(dirMode)) {
+      throw new Error(
+        `spend ledger directory "${this.dir}" is world-writable; refusing to trust it (a local user could plant a forged version file).`,
+      );
+    }
     for (let attempt = 0; attempt < READ_RETRY_MAX; attempt++) {
       const n = this.highestVersion();
       if (n === 0) return { state: emptyState(this.initialNow), version: "0" as Version };

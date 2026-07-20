@@ -61,6 +61,26 @@ describe("config loader — CONF-01 (world-writable refusal)", () => {
     const path = writePolicy(JSON.stringify(validPolicyObject()), 0o620);
     expect(loadPolicyFile(path).ok).toBe(true);
   });
+
+  it("rejects-world-writable-policy-dir", (ctx) => {
+    if (process.platform === "win32") ctx.skip(); // PLAT-01: world-writable is meaningless under synthesized win32 modes
+    // CONF-03: a 0o600 policy file in a WORLD-WRITABLE DIRECTORY is still swappable — dir-write governs
+    // rename/replace, so any local user can substitute a permissive policy.json (also 0o600) that passes
+    // the file-level check. Refuse the directory, not just the file. (Own temp dir — the shared one stays 0o700.)
+    const d = mkdtempSync(join(tmpdir(), "spendguard-dirperm-"));
+    try {
+      const p = join(d, "policy.json");
+      writeFileSync(p, JSON.stringify(validPolicyObject()));
+      chmodSync(p, 0o600); // the file itself is fine
+      chmodSync(d, 0o777); // its directory is world-writable
+      const r = loadPolicyFile(p);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toBe("config.dir_world_writable");
+    } finally {
+      chmodSync(d, 0o700); // restore so cleanup can remove it
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("config loader — I/O failures fail closed", () => {

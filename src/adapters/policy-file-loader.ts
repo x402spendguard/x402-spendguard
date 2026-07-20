@@ -6,6 +6,7 @@
 // Format is JSON (D-023): dep-free, so the guard adds no parser to its own supply
 // chain — the exact class of transitive dependency it exists to be skeptical of.
 import { statSync, readFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { modeIsWorldWritable } from "./fs-perms.js";
 import { parsePolicy } from "../parse.js";
 import type { Result } from "../parse.js";
@@ -32,6 +33,19 @@ export function loadPolicyFile(path: string): Result<Policy> {
   // Guarded for Windows (PLAT-01), where synthesized mode bits would misfire into a deny-all.
   if (modeIsWorldWritable(mode)) {
     return fail("config.world_writable", `Policy file "${path}" is world-writable; refusing to load it.`);
+  }
+  // CONF-03: refuse a world-writable *directory* too. Directory-write governs rename/replace of its
+  // entries, so a world-writable dir lets any local user swap `policy.json` for a permissive one (also
+  // 0o600, passing the file check above). Same predicate, world-only + sticky-blind, same rationale as
+  // the file gate — and POSIX-only (PLAT-01), since `modeIsWorldWritable` is a no-op on win32.
+  let dirMode: number;
+  try {
+    dirMode = statSync(dirname(path)).mode;
+  } catch {
+    return fail("config.file_unreadable", `Policy directory for "${path}" could not be stat'd.`);
+  }
+  if (modeIsWorldWritable(dirMode)) {
+    return fail("config.dir_world_writable", `Policy directory "${dirname(path)}" is world-writable; refusing to load "${path}".`);
   }
   let text: string;
   try {

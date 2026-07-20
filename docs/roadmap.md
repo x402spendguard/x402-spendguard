@@ -98,10 +98,12 @@ Convention: each item names its **gate** (what must be true before it ships) and
 - **L2 — ledger-file permission check. DONE (D-034).** The `FileSpendStore` ledger now mirrors both
   patterns: version files are **created `0o600`** (owner-private at rest — PRIV-04) and a
   **world-writable** ledger is **refused** on read before its bytes are trusted (integrity, the
-  CONF-01 mirror — ACCT-06). Scoped to the world-write bit on the **file** (consistent with CONF-01);
-  the world-writable-**directory** vector (equally applicable to `policy.json`) is deferred to a
-  future *uniform* dir-perm pass, documented rather than half-addressed. Kevin pulled this forward
-  from the snapshot privacy discussion (it's the real "who-else-on-this-box" surface). (D-022, D-025.)
+  CONF-01 mirror — ACCT-06). Scoped to the world-write bit on the **file** (consistent with CONF-01).
+  The world-writable-**directory** vector (equally applicable to `policy.json`) — a writable dir lets a
+  local user plant/replace files even when they are `0o600` — is now **closed by the uniform dir-perm
+  pass, DONE (D-039):** CONF-03 (policy dir) + ACCT-08 (ledger dir), sticky-blind, world-only, POSIX-only.
+  Kevin pulled the file check forward from the snapshot privacy discussion (it's the real
+  "who-else-on-this-box" surface). (D-022, D-025, D-039.)
 
 - **Windows platform-guard for the perm gates. DONE (D-035).** The POSIX mode-bit refusals
   (CONF-01 policy, ACCT-06 ledger) are now **skipped on Windows** (`process.platform === "win32"`)
@@ -114,7 +116,7 @@ Convention: each item names its **gate** (what must be true before it ships) and
   `process.platform`); the POSIX-only perm-assertion tests self-skip on win32 via `ctx.skip()`. It
   passed (161 passed / 5 skipped) *and* caught a latent cross-platform test bug on its first run (a
   path-separator classifier that faked-platform tests structurally couldn't reach). **Still owed:** a
-  full ACL adapter (opt-in) and the deferred *uniform dir-perm pass* noted under L2.
+  full ACL adapter (opt-in). *(The uniform dir-perm pass noted under L2 is now DONE — D-039.)*
 
 - **CONF-02 — name the policy-parse behavior as a requirement. DONE (ratified 2026-07-19).**
   `parsePolicy`'s parse-into-`Policy` contract now carries requirement id CONF-02 — the parse-contract

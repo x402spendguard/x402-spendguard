@@ -181,4 +181,42 @@ describe("ledger file permissions (L2 — ACCT-06 integrity, PRIV-04 privacy)", 
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("ledger-refuses-world-writable-dir", async (ctx) => {
+    if (process.platform === "win32") ctx.skip(); // PLAT-01: world-writable is meaningless under synthesized win32 modes
+    // ACCT-08: a 0o600 ledger file in a WORLD-WRITABLE DIRECTORY is still attackable — dir-write governs
+    // create/rename, so any local user can PLANT a forged higher-version file (`ledger.v999`, itself 0o600)
+    // that load() would then pick, defeating the file-level check. Refuse the directory before trusting it.
+    const dir = tmp();
+    try {
+      const ledger = join(dir, "ledger");
+      const store = new FileSpendStore(ledger, NOW as UnixSeconds);
+      const { version } = await store.load();
+      await store.compareAndSave(version, emptyState(NOW)); // creates ledger.v1 (0o600) — the file itself is fine
+      chmodSync(dir, 0o777); // the CONTAINING DIRECTORY is world-writable — the plant surface
+      await expect(store.load()).rejects.toThrow(/directory .* world-writable/);
+    } finally {
+      chmodSync(dir, 0o700); // restore so cleanup can remove it
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("ledger-refuses-world-writable-dir-even-if-sticky", async (ctx) => {
+    if (process.platform === "win32") ctx.skip(); // PLAT-01: POSIX-only
+    // Sticky-blind (the design fork): the sticky bit (as on /tmp = 0o1777) stops delete/rename of
+    // OTHER users' files but NOT create — so an attacker can still plant a forged `ledger.v999` in a
+    // sticky world-writable dir. Sticky does not close the plant vector, so the refusal is sticky-blind.
+    const dir = tmp();
+    try {
+      const ledger = join(dir, "ledger");
+      const store = new FileSpendStore(ledger, NOW as UnixSeconds);
+      const { version } = await store.load();
+      await store.compareAndSave(version, emptyState(NOW));
+      chmodSync(dir, 0o1777); // world-writable AND sticky
+      await expect(store.load()).rejects.toThrow(/directory .* world-writable/);
+    } finally {
+      chmodSync(dir, 0o700);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
