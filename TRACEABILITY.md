@@ -39,7 +39,7 @@ more than one requirement, so *checks* ≥ *tests*.
 | **ACCT-05** | A spend store shared across processes is serialized (cross-process single-writer): two processes cannot both pass a cap they jointly exceed. | T9 | `cross-process-cannot-both-pass` | ✅ passed |
 | **ACCT-06** | The durable spend ledger is **refused if world-writable** (fail-closed) — its permissions are checked **before** its bytes are trusted, so a… | T15 | `ledger-refuses-world-writable` | ✅ passed |
 | **ACCT-07** | The CAS is **immune to version-number reuse**: a `compareAndSave` whose `expected` is no longer current is rejected as a **conflict**, even when… | T9 | `cas-rejects-stale-writer-after-cleanup` | ✅ passed |
-| **ACCT-08** | The `FileSpendStore` refuses to read from a **world-writable ledger directory** (checked per-`load()`, before any version file is trusted). A… | T15 | `ledger-refuses-world-writable-dir` | ✅ passed |
+| **ACCT-08** | The `FileSpendStore` refuses a **world-writable ledger directory** on **every trust-taking operation** — the check runs at the top of both `load()`… | T15 | `ledger-refuses-world-writable-dir` | ✅ passed |
 | **PRIV-01** | The core makes no network calls; a static check fails the build if the core can import a socket-capable module. | T12 | `core-has-no-egress` | ✅ passed |
 | **PRIV-02** | The decision log never contains the signed authorization or the payment header (both are bearer capabilities). | T11 | `log-never-contains-signature` | ✅ passed |
 | **PRIV-03** | No telemetry. Absent, not opt-out. | T12 | `no-telemetry-calls` | ✅ passed |

@@ -162,24 +162,36 @@ export class FileSpendStore implements SpendStore {
     return max;
   }
 
-  async load(): Promise<{ state: SpendState; version: Version }> {
-    // ACCT-08: refuse a world-writable ledger DIRECTORY before trusting (or picking) any version file.
-    // Directory-write governs create/rename, so a world-writable dir lets any local user PLANT a forged
-    // higher-version file that highestVersion() would then pick — even a 0o600 planted file passes the
-    // per-file ACCT-06 check. Sticky-blind: the sticky bit stops delete/rename but NOT create, so it does
-    // not close this plant vector. World-only per the single-tenant trust model; POSIX-only (PLAT-01).
-    // A missing dir (no ledger yet) is not refused — the check applies only to an existing directory.
-    let dirMode: number | undefined;
+  /**
+   * ACCT-08: refuse a world-writable ledger DIRECTORY. Called at the top of EVERY trust-taking
+   * operation (`load` AND `compareAndSave`) so the refusal is a property of the store itself, held
+   * BY CONSTRUCTION — never resting on the caller invoking `load()` first (that would locate a
+   * security invariant in caller call-order; a future adapter/refactor could reopen the door).
+   *
+   * Directory-write governs create/rename, so a world-writable dir lets any local user PLANT a forged
+   * higher-version file that `highestVersion()` would then pick — even a `0o600` planted file passes
+   * the per-file ACCT-06 check. Sticky-blind: the sticky bit stops delete/rename but NOT create, so it
+   * does not close this plant vector. World-only per the single-tenant trust model; POSIX-only (PLAT-01,
+   * `modeIsWorldWritable` is a no-op on win32). A missing dir (no ledger yet) is not refused; any other
+   * stat error fails closed.
+   */
+  private assertDirTrusted(): void {
+    let dirMode: number;
     try {
       dirMode = statSync(this.dir).mode;
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err; // a real stat error → fail-closed
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return; // no dir yet → no ledger → nothing to refuse
+      throw err; // a real stat error → fail-closed
     }
-    if (dirMode !== undefined && modeIsWorldWritable(dirMode)) {
+    if (modeIsWorldWritable(dirMode)) {
       throw new Error(
         `spend ledger directory "${this.dir}" is world-writable; refusing to trust it (a local user could plant a forged version file).`,
       );
     }
+  }
+
+  async load(): Promise<{ state: SpendState; version: Version }> {
+    this.assertDirTrusted(); // ACCT-08 — by construction, before any version file is picked or read
     for (let attempt = 0; attempt < READ_RETRY_MAX; attempt++) {
       const n = this.highestVersion();
       if (n === 0) return { state: emptyState(this.initialNow), version: "0" as Version };
@@ -221,6 +233,7 @@ export class FileSpendStore implements SpendStore {
   }
 
   async compareAndSave(expected: Version, next: SpendState): Promise<boolean> {
+    this.assertDirTrusted(); // ACCT-08 — refuse on this trust-taking op too, independent of any prior load()
     const n = Number(expected);
     const targetN = n + 1;
     const target = this.versionPath(targetN);

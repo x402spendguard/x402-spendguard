@@ -201,6 +201,24 @@ describe("ledger file permissions (L2 — ACCT-06 integrity, PRIV-04 privacy)", 
     }
   });
 
+  it("compareAndSave-refuses-world-writable-dir (ACCT-08 holds by construction, not by call-order)", async (ctx) => {
+    if (process.platform === "win32") ctx.skip(); // PLAT-01: POSIX-only
+    // The refusal must be a property of the STORE, not of the guard calling load() first. Hit the OTHER
+    // trust-taking entry point — compareAndSave() — DIRECTLY, bypassing load(): it must refuse too, else a
+    // future adapter/refactor over the SpendStore seam could commit against a planted/world-writable dir.
+    const dir = tmp();
+    try {
+      const ledger = join(dir, "ledger");
+      const store = new FileSpendStore(ledger, NOW as UnixSeconds);
+      await store.compareAndSave("0" as Version, emptyState(NOW)); // creates ledger.v1 while dir is still 0o700
+      chmodSync(dir, 0o777); // dir now world-writable
+      await expect(store.compareAndSave("1" as Version, emptyState(NOW))).rejects.toThrow(/directory .* world-writable/);
+    } finally {
+      chmodSync(dir, 0o700);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("ledger-refuses-world-writable-dir-even-if-sticky", async (ctx) => {
     if (process.platform === "win32") ctx.skip(); // PLAT-01: POSIX-only
     // Sticky-blind (the design fork): the sticky bit (as on /tmp = 0o1777) stops delete/rename of
