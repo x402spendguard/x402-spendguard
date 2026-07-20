@@ -109,8 +109,12 @@ Convention: each item names its **gate** (what must be true before it ships) and
   unguarded check would **misfire into a deny-all** (not merely no-op) — a latent brick, invisible
   because dev/CI is Linux/WSL2. Windows privacy/integrity rest on NTFS ACLs (`%LOCALAPPDATA`);
   a full ACL adapter is a future opt-in (needs `icacls`/native → out of the zero-dep core). PLAT-01.
-  Surfaced by Kevin's "what about Windows users?" question. **Still owed:** verification on real
-  Windows (can't from Linux/WSL2), and the deferred *uniform dir-perm pass* noted under L2.
+  Surfaced by Kevin's "what about Windows users?" question. **Verified on real Windows (2026-07-19):**
+  a `windows-latest` CI job runs the default gate + typecheck on a genuine runner (not faked
+  `process.platform`); the POSIX-only perm-assertion tests self-skip on win32 via `ctx.skip()`. It
+  passed (161 passed / 5 skipped) *and* caught a latent cross-platform test bug on its first run (a
+  path-separator classifier that faked-platform tests structurally couldn't reach). **Still owed:** a
+  full ACL adapter (opt-in) and the deferred *uniform dir-perm pass* noted under L2.
 
 - **CONF-02 — name the policy-parse behavior as a requirement. DONE (ratified 2026-07-19).**
   `parsePolicy`'s parse-into-`Policy` contract now carries requirement id CONF-02 — the parse-contract
