@@ -55,10 +55,15 @@ Convention: each item names its **gate** (what must be true before it ships) and
   contract. The guard stays a data *source the user controls, never a sender* — the inverse of
   Sentinel. (Management-edge egress is still converge-first, likely with Opus.)
 
-- **Dev-tooling vulnerabilities.** `npm audit` flags a critical/high/moderate in the
-  `vitest`/`vite`/`esbuild` dev tree (dev-server / UI-server issues) — **dev-only, not shipped**
-  (runtime `npm audit --omit=dev` = 0). Fix = upgrade `vitest` to 4.x (a breaking change); evaluate
-  and do it deliberately. Not blocking; surfaced when `@x402` was added (which itself added none).
+- **Dev-tooling vulnerabilities. DONE — `vitest` bumped `1.6 → 3.2.7` (`npm audit` = 0).** The dev-tree
+  advisories (esbuild dev-server / vite) were **dev-only, not shipped** (runtime `npm audit --omit=dev`
+  was already 0). Fixed by the newer vite/esbuild that vitest 3 brings — a **pure version bump**: no
+  code change, no new dependency. We deliberately stopped at **3.2.7 rather than 4.x**: vitest 4 hard-
+  requires Node `≥20.19` (it uses `node:util` `styleText`, added in 20.12) and **drops the `vite-node`
+  bin** the cross-process e2e workers spawn — so 4.x would force a local-Node upgrade *plus* migrating
+  the worker/traceability runners to `tsx`. That's real future work to do deliberately **when** 4.x is
+  needed for its own reasons — not bundled into an audit cleanup (YAGNI). 3.2.7 keeps `vite-node`, runs
+  on Node 20.11, and clears the audit. (Verified: matrix byte-identical, e2e teeth still over-allow.)
 
 - **Verifiable audit log — integrity core DONE (D-036).** The decision log is now tamper-**evident**:
   per-entry `seq` + a hash chain (each record commits to the prior via an injected `ChainHasher`
