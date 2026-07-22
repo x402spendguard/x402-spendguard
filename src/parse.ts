@@ -20,6 +20,7 @@ import type {
   Policy,
   UnixSeconds,
 } from "./types.js";
+import type { ConfigReason } from "./reasons.js";
 
 /** A parse result: either a trustworthy value, or a specific, stable failure. */
 export type Result<T> =
@@ -27,7 +28,9 @@ export type Result<T> =
   | { ok: false; reason: string; detail: string };
 
 const ok = <T>(value: T): Result<T> => ({ ok: true, value });
-const err = <T>(reason: string, detail: string): Result<T> => ({ ok: false, reason, detail });
+// `reason` typed to the CONFIG partition — a decision code here is a compile error, and the code is
+// carried as a variable so no raw literal escapes the registry (reasons.ts + test/reasons.test.ts).
+const err = <T>(reason: ConfigReason, detail: string): Result<T> => ({ ok: false, reason, detail });
 
 // ── Primitives ───────────────────────────────────────────────────────────────
 

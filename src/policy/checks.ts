@@ -1,8 +1,17 @@
 import type { PaymentEvaluation, Policy, SpendState, PolicyDecision, UnixSeconds } from "../types.js";
+import type { DecisionReason } from "../reasons.js";
 import { assetKey } from "../parse.js";
 
-const allow = (): PolicyDecision => ({ verdict: "allow", reason: "ok", detail: "All checks passed." });
-const deny = (reason: string, detail: string): PolicyDecision => ({ verdict: "deny", reason, detail });
+// Both helpers carry the reason through as a VARIABLE (never a `reason: "literal"`), and the
+// `reason` parameter is typed to the DECISION partition — so a config code here is a compile error,
+// and no raw code literal escapes the registry (see reasons.ts + test/reasons.test.ts).
+const decide = (verdict: "allow" | "deny", reason: DecisionReason, detail: string): PolicyDecision => ({
+  verdict,
+  reason,
+  detail,
+});
+const allow = (): PolicyDecision => decide("allow", "ok", "All checks passed.");
+const deny = (reason: DecisionReason, detail: string): PolicyDecision => decide("deny", reason, detail);
 
 /**
  * Run every check in order; first deny wins; a payment must pass ALL to be allowed.

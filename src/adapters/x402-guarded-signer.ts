@@ -25,8 +25,11 @@
 import { authorizationFromTypedData, type TypedData } from "./x402-wire.js";
 import type { Authorizer } from "../audit/decision-log.js";
 import type { Challenge, Domain } from "../types.js";
+import type { ReasonCode } from "../reasons.js";
 
-/** Thrown to abort signing. Carries the guard's stable reason + human detail (never a payload). */
+/** Thrown to abort signing. Carries the guard's stable reason + human detail (never a payload).
+ *  `reason` is `string` because this error also RE-THROWS a decision's or a parse Result's reason
+ *  (a pass-through carrier). Codes that ORIGINATE here go through `block()` so they stay registered. */
 export class PaymentBlockedError extends Error {
   constructor(
     readonly reason: string,
@@ -35,6 +38,11 @@ export class PaymentBlockedError extends Error {
     super(`x402 payment blocked [${reason}]: ${detail}`);
     this.name = "PaymentBlockedError";
   }
+}
+
+/** Throw a block whose code ORIGINATES here — typed to the registry so it can't drift. */
+function block(reason: ReasonCode, detail: string): never {
+  throw new PaymentBlockedError(reason, detail);
 }
 
 /** The x402 EVM signer surface we wrap (a viem LocalAccount satisfies it). `guardedSigner`
@@ -72,7 +80,7 @@ export class PaymentFlowContext {
    *  origin would otherwise mis-charge the per-domain bucket with no error. */
   private assertNoInterleave<T>(existing: T | undefined, incoming: T, what: string): void {
     if (existing !== undefined && existing !== incoming) {
-      throw new PaymentBlockedError(
+      block(
         "adapter.concurrent_flow",
         `A second, different ${what} was observed before the prior payment flow signed; concurrent flows on one binding are unsupported (use one binding per flow).`,
       );
@@ -88,7 +96,7 @@ export class PaymentFlowContext {
     this.challenge = undefined;
     if (!origin || !challenge) {
       const missing = !origin ? "no client-observed origin" : "no observed challenge";
-      throw new PaymentBlockedError("adapter.context_incomplete", `Cannot evaluate the payment: ${missing}.`);
+      block("adapter.context_incomplete", `Cannot evaluate the payment: ${missing}.`);
     }
     return { origin, challenge };
   }
@@ -124,12 +132,11 @@ export function guardedSigner<S extends ClientEvmSigner>(
   guard: Authorizer,
   context: PaymentFlowContext,
 ): S {
-  const blockSigningRoute = (method: string) => async (): Promise<never> => {
-    throw new PaymentBlockedError(
+  const blockSigningRoute = (method: string) => async (): Promise<never> =>
+    block(
       "adapter.unguarded_signing_route",
       `Refused '${method}': the guard vets only signTypedData; no other signing route is permitted.`,
     );
-  };
   const guarded: Record<string, unknown> = {
     address: inner.address,
     async signTypedData(td: TypedData): Promise<`0x${string}`> {

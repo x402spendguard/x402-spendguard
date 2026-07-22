@@ -11,8 +11,9 @@ import { modeIsWorldWritable } from "./fs-perms.js";
 import { parsePolicy } from "../parse.js";
 import type { Result } from "../parse.js";
 import type { Policy } from "../types.js";
+import type { ConfigReason } from "../reasons.js";
 
-const fail = (reason: string, detail: string): Result<Policy> => ({ ok: false, reason, detail });
+const fail = (reason: ConfigReason, detail: string): Result<Policy> => ({ ok: false, reason, detail });
 
 /**
  * Read, permission-check, and parse a policy file into a trustworthy `Policy`.

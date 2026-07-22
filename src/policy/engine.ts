@@ -1,4 +1,5 @@
 import type { PaymentEvaluation, Policy, SpendState, PolicyDecision, UnixSeconds } from "../types.js";
+import type { DecisionReason } from "../reasons.js";
 import { runChecks } from "./checks.js";
 
 /**
@@ -23,10 +24,8 @@ export function evaluate(
     return runChecks(evaluation, policy, state, now);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "unknown error";
-    return {
-      verdict: "deny",
-      reason: "engine.error",
-      detail: `Policy engine threw; denying by default: ${msg}`,
-    };
+    // Carried as a typed variable so no raw code literal escapes the registry (reasons.ts).
+    const reason: DecisionReason = "engine.error";
+    return { verdict: "deny", reason, detail: `Policy engine threw; denying by default: ${msg}` };
   }
 }

@@ -12,6 +12,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { evaluate } from "../src/policy/engine.js";
+import { isReasonCode } from "../src/reasons.js";
 import { recordSpend, applyWindow, emptyState } from "../src/accounting/guard.js";
 import { parsePolicy, parseChallenge, parseAuthorization, assetKey } from "../src/parse.js";
 import { HashChainDecisionLog } from "../src/audit/hash-chain-log.js";
@@ -221,15 +222,17 @@ describe("properties (fast-check) — invariants over generated inputs", () => {
     );
   });
 
-  // INV-8 — observability. Every decision, allow or deny, carries a non-empty machine-readable reason
-  // CODE (no whitespace — the human sentence lives in `detail`). This is what makes deny auditable.
-  it("INV-8 observability: every decision carries a non-empty reason code", () => {
+  // INV-8 — observability. Every decision, allow or deny, carries a reason that is a REGISTERED
+  // code (a member of the reason registry), not merely a non-empty string. Membership is the
+  // stronger claim: it makes the deny-reason legend's completeness true by construction — a decision
+  // can never surface a code the legend doesn't document. The human sentence lives in `detail`.
+  it("INV-8 observability: every decision carries a registered reason code", () => {
     fc.assert(
       fc.property(fc.constantFrom(PAYEE, ATTACKER), arbAmount, arbAmount, fc.boolean(), (to, cAmt, aAmt, halt) => {
         const e = ev({ payTo: PAYEE, amount: A(cAmt) }, { to, value: A(aAmt) });
         const pol = policy({ halt, allowlist: [{ address: PAYEE, chain: CHAIN }] });
         const { reason } = evaluate(e, pol, state(), NOW);
-        return typeof reason === "string" && reason.length > 0 && !/\s/.test(reason);
+        return isReasonCode(reason);
       }),
       { numRuns: 300 },
     );

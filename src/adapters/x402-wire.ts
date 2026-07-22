@@ -20,6 +20,7 @@
 import { parseAuthorization, parseChallenge } from "../parse.js";
 import type { Result } from "../parse.js";
 import type { Authorization, Challenge } from "../types.js";
+import type { ConfigReason } from "../reasons.js";
 
 /** The EIP-712 typed-data object a wrapped `signTypedData` receives. */
 export interface TypedData {
@@ -113,9 +114,10 @@ function intToDecimalString(x: unknown): unknown {
  */
 export function authorizationFromTypedData(td: TypedData): Result<Authorization> {
   if (td.primaryType !== "TransferWithAuthorization") {
+    const reason: ConfigReason = "wire.unsupported_typed_data";
     return {
       ok: false,
-      reason: "wire.unsupported_typed_data",
+      reason,
       detail: `primaryType "${td.primaryType}" is not EIP-3009 TransferWithAuthorization (v1 supports EVM exact only).`,
     };
   }
@@ -172,9 +174,10 @@ export function challengeFromV2(paymentRequired: V2PaymentRequired, offer: V2Off
 export function challengeFromV1(offer: V1Offer): Result<Challenge> {
   const name = offer.network;
   if (typeof name !== "string" || !Object.hasOwn(V1_NETWORK_CHAIN_ID, name)) {
+    const reason: ConfigReason = "wire.unknown_v1_network";
     return {
       ok: false,
-      reason: "wire.unknown_v1_network",
+      reason,
       detail: `v1 network "${String(name)}" is not a known EVM network (no CAIP-2 mapping; cannot key caps or cross-check the signed chainId).`,
     };
   }

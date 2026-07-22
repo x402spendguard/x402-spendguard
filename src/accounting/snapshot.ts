@@ -3,6 +3,7 @@
 // (in guard.ts) loads state and calls this. See REQUIREMENTS.md SNAP-01..03 and the `Snapshot` type
 // doc (types.ts) for the sensitivity contract — this projects the system's most sensitive artifact.
 import type { AssetKey, Caps, Policy, SpendState, UnixSeconds, Snapshot, DenominationSnapshot, DomainSnapshot } from "../types.js";
+import type { ReasonCode } from "../reasons.js";
 
 /**
  * Thrown by `SpendGuard.snapshot()` when the spend store cannot be read.
@@ -14,7 +15,7 @@ import type { AssetKey, Caps, Policy, SpendState, UnixSeconds, Snapshot, Denomin
  * rather than fabricate zeros. Do not "harmonize" this to fail-closed — that reintroduces the lie.
  */
 export class SnapshotUnreadableError extends Error {
-  readonly reason = "snapshot.state_unreadable";
+  readonly reason: ReasonCode = "snapshot.state_unreadable";
   constructor(cause: unknown) {
     super(
       "snapshot.state_unreadable: could not read spend state; refusing to return a fabricated " +

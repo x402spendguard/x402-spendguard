@@ -10,6 +10,7 @@ import { challengeFromV2, challengeFromV1, type V1Offer, type V2Offer, type V2Pa
 import { PaymentFlowContext, guardedSigner, type ClientEvmSigner } from "./x402-guarded-signer.js";
 import { guardedFetch, type FetchLike, type ResponseLike } from "./x402-transport.js";
 import type { Authorizer } from "../audit/decision-log.js";
+import type { ReasonCode } from "../reasons.js";
 
 /** Structural match of @x402/core's `PaymentCreationContext` (2.18.0). `selectedRequirements`
  *  is the union of both generations' offer shapes — `x402Version` on `paymentRequired` selects
@@ -41,7 +42,9 @@ export function challengeCaptureHook(context: PaymentFlowContext): BeforePayment
     } else if (version === 1) {
       challenge = challengeFromV1(ctx.selectedRequirements);
     } else {
-      return { abort: true, reason: "adapter.unsupported_x402_version" };
+      // Typed variable (not a raw literal) so the code stays anchored to the registry (reasons.ts).
+      const reason: ReasonCode = "adapter.unsupported_x402_version";
+      return { abort: true, reason };
     }
     if (!challenge.ok) return { abort: true, reason: challenge.reason };
     context.observeChallenge(challenge.value);

@@ -19,6 +19,7 @@ import { evaluate } from "../policy/engine.js";
 import { assetKey } from "../parse.js";
 import { projectSnapshot, SnapshotUnreadableError } from "./snapshot.js";
 import type { PaymentEvaluation, Policy, PolicyDecision, SpendState, Snapshot, UnixSeconds } from "../types.js";
+import type { DecisionReason } from "../reasons.js";
 
 /** Injected wall clock. The real one lives in an adapter; tests inject a fake. */
 export interface Clock {
@@ -108,7 +109,7 @@ export function recordSpend(state: SpendState, ev: PaymentEvaluation): SpendStat
   return { ...state, spentByDomain: byDomain, spentByAsset: byAsset };
 }
 
-const deny = (reason: string, detail: string): PolicyDecision => ({ verdict: "deny", reason, detail });
+const deny = (reason: DecisionReason, detail: string): PolicyDecision => ({ verdict: "deny", reason, detail });
 
 /** Default bound on CAS retries under cross-process contention. Liveness-only: exhaustion ALWAYS
  *  denies (fail-closed), never wrongly allows, so this is a mechanism knob, not policy. */
