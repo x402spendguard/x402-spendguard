@@ -177,7 +177,10 @@ describe("properties (fast-check) — invariants over generated inputs", () => {
       ),
       { numRuns: 120 },
     );
-  });
+    // Explicit generous timeout: 120 runs of temp-dir + keyed-HMAC + on-disk mutate/re-verify is
+    // inherently ~3s locally but 5–6s on busy 2-core CI runners, crossing vitest's 5s default and
+    // flaking RED on duration alone (not a counterexample). A real hang still fails at this bound.
+  }, 30_000);
 
   // INV-5 — same-(asset,chain) accounting. A cap is keyed by (asset, chain); spend in one denomination
   // must never consume another's headroom. Cap both assets equally, spend arbitrarily in asset A, then
