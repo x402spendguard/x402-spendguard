@@ -27,6 +27,7 @@ const FROZEN_VALUE_EXPORTS = [
   "systemClock",
   "loadPolicyFile",
   "parsePolicy",
+  "assetKey",
   // audit (opt-in, tamper-evident)
   "HashChainDecisionLog",
   "sha256ChainHasher",

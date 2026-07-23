@@ -16,6 +16,10 @@ export { FileSpendStore } from "./adapters/file-spend-store.js";
 export { systemClock } from "./adapters/system-clock.js";
 export { loadPolicyFile } from "./adapters/policy-file-loader.js";
 export { parsePolicy } from "./parse.js";
+// Build a caps key (`chain|token`) by construction rather than hand-concatenating the composite
+// string — the #1 policy-authoring error surface. `caps` is keyed by `AssetKey`; `assetKey({chain,
+// token})` produces one correctly, and a wrong-shaped key can't be typed by accident.
+export { assetKey } from "./parse.js";
 
 // ── Audit (opt-in, tamper-evident) ─────────────────────────────────────────────────────────────
 export { HashChainDecisionLog } from "./audit/hash-chain-log.js";

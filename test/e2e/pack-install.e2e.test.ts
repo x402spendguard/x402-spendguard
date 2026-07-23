@@ -72,17 +72,21 @@ describe("PKG teeth — a real packed-and-installed tarball", () => {
       `
 import {
   SpendGuard, FileSpendStore, systemClock, parsePolicy, createSpendGuardBinding,
-  HashChainDecisionLog, sha256ChainHasher,
+  HashChainDecisionLog, sha256ChainHasher, assetKey,
 } from "${PKG_NAME}";
 import assert from "node:assert/strict";
 
 const ledger = ${JSON.stringify(ledger)};
 
+// Build the caps key by construction (the documented way) — proves assetKey ships and is callable.
+const capsKey = assetKey({ chain: "eip155:8453", token: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" });
+assert.equal(capsKey, "eip155:8453|0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "assetKey builds the composite caps key");
+
 const parsed = parsePolicy({
   halt: false,
   requireOriginMatch: false,
   allowlist: [{ address: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", chain: "eip155:8453" }],
-  caps: { "eip155:8453|0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa":
+  caps: { [capsKey]:
     { perRequest: "1000000", perDomain: "5000000", global: "20000000" } },
   clockSkewSeconds: "60", maxAuthLifetimeSeconds: "3600", windowSeconds: "86400",
 });
