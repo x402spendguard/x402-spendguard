@@ -24,11 +24,18 @@ function srcFiles(dir = SRC): string[] {
 }
 
 describe("reason registry — the single source of truth", () => {
-  // COMPLETENESS BY CONSTRUCTION. The legend can only claim to cover every code if no code can be
-  // emitted from outside the registry. Emit sites reach a code one of two ways: as a TYPED helper
-  // argument (deny/err/fail/error-ctor, constrained to a partition — the compiler rejects a stranger)
-  // or as a raw `reason: "..."` object-literal property (the BYPASS — unchecked). This test forbids
-  // the bypass everywhere but reasons.ts, so every code must originate here, whatever its carrier.
+  // COMPLETENESS BY CONSTRUCTION — via TWO complementary gates, not this regex alone. Read this
+  // before assuming the check below is a complete literal scan (it is deliberately NOT):
+  //   1. TYPE SYSTEM (the primary gate). The emit helpers take a closed key-union parameter —
+  //      deny()/allow() → DecisionReason, err()/fail() → ConfigReason — so a positional argument
+  //      that isn't a registry key fails to compile. This covers the ordinary emit path; the regex
+  //      below never sees it and doesn't need to.
+  //   2. THIS STATIC CHECK (the backstop). It covers ONLY the raw `reason: "..."` OBJECT-LITERAL
+  //      shape — the one bypass the type system can't catch, because `PolicyDecision.reason` /
+  //      `Result.reason` are structurally assignable from any string. It does NOT scan positional
+  //      args (gate 1 owns those). The only residual is a deliberate `as any` cast, a self-inflicted
+  //      wound no gate can prevent.
+  // Together: types block the ordinary path, the regex blocks the object-literal path types can't see.
   it("no-reason-code-escapes-the-registry", () => {
     // A `reason:` property assigned a string literal whose VALUE is code-shaped (dotted or a bare
     // lowercase word, no spaces). This deliberately spares the audit layer's `VerifyResult.reason`,
