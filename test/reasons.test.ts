@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   REASONS,
   DECISION_REASONS,
@@ -9,15 +9,16 @@ import {
   isReasonCode,
 } from "../src/reasons.js";
 
-const SRC = new URL("../src", import.meta.url).pathname;
+const SRC = fileURLToPath(new URL("../src/", import.meta.url));
 
-/** Every .ts under src/, recursively. */
-function srcFiles(dir: string): string[] {
+/** Every .ts under src/, recursively. Returns forward-slash paths so the exclude/display logic is
+ *  platform-independent (fileURLToPath yields backslashes on Windows); Node reads either separator. */
+function srcFiles(dir = SRC): string[] {
   const out: string[] = [];
-  for (const name of readdirSync(dir)) {
-    const p = join(dir, name);
-    if (statSync(p).isDirectory()) out.push(...srcFiles(p));
-    else if (name.endsWith(".ts")) out.push(p);
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const p = `${dir}${entry.name}`;
+    if (entry.isDirectory()) out.push(...srcFiles(`${p}/`));
+    else if (entry.name.endsWith(".ts")) out.push(p.replace(/\\/g, "/"));
   }
   return out;
 }
@@ -36,8 +37,9 @@ describe("reason registry — the single source of truth", () => {
     const CODE = /^[a-z][a-z_]*(\.[a-z_]+)*$/;
     const RE = /reason\s*:\s*(['"`])([^'"`]*)\1/g;
     const offenders: string[] = [];
-    for (const file of srcFiles(SRC)) {
+    for (const file of srcFiles()) {
       if (file.endsWith("/reasons.ts")) continue;
+      const shown = file.replace(/^.*\/src\//, "src/"); // platform-independent display
       readFileSync(file, "utf8")
         .split("\n")
         .forEach((line, i) => {
@@ -45,7 +47,7 @@ describe("reason registry — the single source of truth", () => {
           if (trimmed.startsWith("//") || trimmed.startsWith("*")) return; // skip comment lines
           const code = line.split("//")[0]; // strip any trailing line comment
           for (const m of code.matchAll(RE)) {
-            if (CODE.test(m[2])) offenders.push(`${file.replace(SRC, "src")}:${i + 1}: ${trimmed}`);
+            if (CODE.test(m[2])) offenders.push(`${shown}:${i + 1}: ${trimmed}`);
           }
         });
     }
