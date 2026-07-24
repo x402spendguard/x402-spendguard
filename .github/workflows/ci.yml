@@ -21,6 +21,10 @@ jobs:
       # committed copy is stale, so the published matrix can never silently drift from reality.
       - run: npm run traceability
       - run: git diff --exit-code TRACEABILITY.md
+      # docs/reason-codes.md is the deny-reason legend, generated from the reason registry. Regenerate
+      # and fail if the committed copy is stale, so the legend can never drift from the emitted codes.
+      - run: npm run reason-codes
+      - run: git diff --exit-code docs/reason-codes.md
 
   # Windows job — verifies the POSIX permission gates degrade to an honest no-op on REAL Windows
   # (PLAT-01, D-035). The faked-platform tests (fs-perms.test.ts) prove the skip LOGIC on any host;

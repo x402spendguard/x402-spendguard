@@ -84,6 +84,33 @@ describe("reason registry — the single source of truth", () => {
     }
   });
 
+  // LEGEND COMPLETENESS, the orphan direction. The legend (docs/reason-codes.md) is generated from
+  // this registry, so a registry entry IS a legend row. This asserts every registered code is actually
+  // EMITTED somewhere in src/ — so a legend row can never describe a code the guard never produces
+  // ("a legend entry with no emitting code → red"). The staleness CI gate covers the other direction
+  // (an emitted code with no regenerated row → git diff red). Match the code as a QUOTED literal so a
+  // short code like "ok" can't false-match a substring (e.g. inside "look"/"token").
+  it("every-registered-code-is-actually-emitted", () => {
+    const sources = srcFiles()
+      .filter((f) => !f.endsWith("/reasons.ts"))
+      .map((f) => readFileSync(f, "utf8"))
+      .join("\n");
+    const orphans = Object.keys(REASONS).filter(
+      (c) => !sources.includes(`"${c}"`) && !sources.includes(`'${c}'`) && !sources.includes(`\`${c}\``),
+    );
+    expect(orphans, `registry entries never emitted in src (orphan legend rows):\n${orphans.join("\n")}`).toEqual([]);
+  });
+
+  // LEGEND COMPLETENESS, the doc direction. Every registered code has a row in the generated legend.
+  // The CI staleness gate (npm run reason-codes + git diff) is the primary guard against a stale/hand-
+  // edited doc; this makes the "every code is documented" half a vitest assertion too, so it's caught
+  // at test time and not only by the CI diff step.
+  it("legend-documents-every-code", () => {
+    const legend = readFileSync(new URL("../docs/reason-codes.md", import.meta.url), "utf8");
+    const missing = Object.keys(REASONS).filter((c) => !legend.includes(`\`${c}\``));
+    expect(missing, `codes with no legend row:\n${missing.join("\n")}`).toEqual([]);
+  });
+
   it("isReasonCode accepts registered codes and rejects strangers", () => {
     expect(isReasonCode("halt")).toBe(true);
     expect(isReasonCode("config.cap_key_malformed")).toBe(true);
