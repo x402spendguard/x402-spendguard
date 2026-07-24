@@ -100,9 +100,9 @@ Read the code. That has always been the deal with a guard.
 
 ## Status
 
-**`v0.2.1` — on [npm](https://www.npmjs.com/package/x402-spendguard): `npm install x402-spendguard`, published from CI (tokenless OIDC) with a signed build provenance attestation.** The guard installs in front of a real `@x402` client and enforces at the moment a payment is signed.
+**`v0.3.0` — on [npm](https://www.npmjs.com/package/x402-spendguard): `npm install x402-spendguard`, published from CI (tokenless OIDC) with a signed build provenance attestation.** The guard installs in front of a real `@x402` client and enforces at the moment a payment is signed.
 
-**Recent highlights (0.2.x):** first release to npm; the property-test layer landed (mutation-proven); and a **P0 cross-process over-allow, found before publish, was fixed** (ACCT-07; postmortem in [TEST_PLAN.md](TEST_PLAN.md) §9).
+**Recent highlights:** a **config on-ramp** (0.3.0) — a fail-loud starter policy, a `describePolicy` echo that renders caps in human units so an off-by-a-zero cap is visible at author time (the one authoring error that failed *open*), and a generated deny-reason legend ([docs/reason-codes.md](docs/reason-codes.md)); the property-test layer (mutation-proven); and a **P0 cross-process over-allow, found before publish, was fixed** (ACCT-07; postmortem in [TEST_PLAN.md](TEST_PLAN.md) §9).
 
 Still **pre-alpha** (`0.x`): single-agent, testnet-validated, single-tenant trust model (see [THREAT_MODEL.md](THREAT_MODEL.md)). **Not for mainnet.** Zero runtime dependencies; `@x402` is an optional peer dependency.
 

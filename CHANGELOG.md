@@ -5,6 +5,45 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). **This project is `0.x` (pre-1.0): the public API may change between releases, and it is
 not yet production-ready.**
 
+## [0.3.0] — 2026-07-24
+
+Adds a **config on-ramp** — the tooling a new user needs to author, check, and understand a policy —
+and closes the one authoring error that fails *open*. Entirely additive: new barrel exports, no
+breaking change (the existing API and `dist` decision path are unchanged).
+
+### Added
+- **`assetKey({ chain, token })`** — build a `chain|token` caps key by construction instead of
+  hand-concatenating the composite string (the #1 policy-authoring error). A wrong-shaped key can no
+  longer be typed by accident.
+- **A shipped, fail-loud starter policy** — `STARTER_POLICY_JSON` (the file as text) and
+  `writeStarterPolicy(path)` (writes it **owner-only** `0o600`, and **refuses to overwrite** an
+  existing file). An unedited copy is *rejected* by `parsePolicy` with a specific reason rather than
+  silently denying every payment. Also at the repo root as `policy.example.json`. This makes POL-01's
+  long-promised "readable default policy file" real (it did not previously exist).
+- **The policy echo — `describePolicy(policy, display?)`, `renderAmount`, `parseDisplay`.** Renders
+  each cap in human units (e.g. `50.000000 USDC`) so an off-by-a-zero cap — the one authoring mistake
+  that fails *open*, since the guard would faithfully enforce the larger ceiling — is visible at
+  author time. Renders from user-declared `display` decimals only (no token registry, no lookup, no
+  egress; exact integer-string math, never a float) and degrades to exact base units rather than
+  guessing. `display` is display-only and structurally cannot affect a decision.
+- **A generated, drift-gated deny-reason legend** (`docs/reason-codes.md`) — every code the guard can
+  emit, what it means and what to change, grouped by where you encounter it (policy load / payment /
+  read API). Generated from the code and CI-checked, so it can never drift or over-claim.
+- **Config walkthrough + `examples/`** — the README now carries the complete, copy-runnable on-ramp
+  (start from the template → edit → validate-and-echo → look up any deny code), and a runnable
+  `examples/configure-and-echo.ts`.
+
+### Internal
+- **Central reason-code registry (`src/reasons.ts`)** — one source of truth for every emittable code.
+  Two typed partitions make a cross-family code a compile error and a static check forbids raw reason
+  literals, so the deny-legend's completeness is *provable*, not enumerated. `INV-8` tightened from
+  "non-empty reason string" to "registered reason code".
+
+### Deferred
+- **Human decimal-string cap *input*** (`"5.00"` → base units). The echo renders base→human safely;
+  accepting human→base input would make `decimals` enforcement-load-bearing and put money arithmetic
+  in the tool, so it is its own converge-first slice.
+
 ## [0.2.1] — 2026-07-17
 
 Test-hardening only — **no functional or API change** (the published `dist/` is identical to `0.2.0`).
