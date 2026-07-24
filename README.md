@@ -81,6 +81,8 @@ This is the same claim as **No egress** above, stated at the level a scanner see
 - **[REQUIREMENTS.md](REQUIREMENTS.md)** — numbered, testable requirements, each traced to a threat and a test.
 - **[TRACEABILITY.md](TRACEABILITY.md)** — the requirements-traceability matrix: every requirement → its verifying test(s) → status. Generated from the suite (`npm run traceability`) and CI-checked so it can't drift.
 - **[TEST_PLAN.md](TEST_PLAN.md)** — testing methodology: how we prove the requirements hold.
+- **[docs/reason-codes.md](docs/reason-codes.md)** — the deny-reason legend: every code the guard emits, what it means, and what to change — grouped by where you hit it. Generated from the code, CI-checked so it can't drift.
+- **[policy.example.json](policy.example.json)** — the annotated starter policy (also shipped in code as `STARTER_POLICY_JSON`); every field, with fail-loud placeholders.
 - **[SECURITY.md](SECURITY.md)** — how to report a vulnerability, and our disclosure commitment.
 - **[docs/verifying-releases.md](docs/verifying-releases.md)** — how to independently verify a release's signed build provenance attestation (and a heads-up about a false alarm from older npm).
 - **[docs/decisions.md](docs/decisions.md)** — the decision record: what we chose, why, and what we rejected.
@@ -116,18 +118,62 @@ Still **pre-alpha** (`0.x`): single-agent, testnet-validated, single-tenant trus
 - **Property-tested enforcement core** — nine `fast-check` property tests covering eight invariants (no-drain, fail-closed fuzzing, binding soundness, same-asset accounting, clock monotonicity, determinism, reason-code observability, hash-chain tamper-detection), each confirmed non-vacuous by mutation.
 - **Frozen, zero-dependency artifact** — a single frozen public entry point (`import { … } from "x402-spendguard"`), a `dist`-only build with zero runtime dependencies and a build provenance attestation you can verify ([how to verify](docs/verifying-releases.md)).
 
-## Wiring it in (the shape)
+## Configuring the guard
 
-The guard interposes at the three points an x402 client exposes, through one binding — the veto happens at the signer, where the *real* struct about to be signed is visible:
+The guard enforces *your* policy and holds no opinions of its own. A policy is a JSON file: a kill switch, a destination **allowlist**, and per-denomination **caps** — plus a few operational fields. The full annotated shape is [`policy.example.json`](policy.example.json).
+
+**1. Start from the shipped template.** It fails loud until you edit it, so you can't accidentally run a misconfigured guard:
 
 ```ts
-const binding = createSpendGuardBinding(guard);              // guard = your policy + spend store
-registerExactEvmScheme(client, { signer: binding.wrapSigner(signer) }); // veto at signing
-client.onBeforePaymentCreation(binding.hook);                // capture the offer
-const guardedFetch = binding.wrapFetch(globalThis.fetch);    // capture the real request origin
+import { writeStarterPolicy } from "x402-spendguard";
+await writeStarterPolicy("./policy.json"); // owner-only (0600); refuses to overwrite an existing file
 ```
 
-A complete, runnable example — both the hermetic deny path and a live funded settle — is in [`test/e2e/`](test/e2e/).
+(Or copy [`policy.example.json`](policy.example.json).)
+
+**2. Replace the placeholders.** Each `REPLACE_WITH_…` value must be edited — **including the `0x` prefix on addresses**: replace the whole `0xREPLACE_WITH_YOUR_PAYEE_ADDRESS`, not just the part after `0x`, or you'll be left with a stray `0x`. Caps are in the token's **base units** (USDC has 6 decimals, so `"5000000"` = 5 USDC). The `caps` key is a `chain|token` coordinate — build it with `assetKey({ chain, token })` rather than hand-concatenating it.
+
+**3. Validate it — and read your caps back in human units.** This is the check on the one authoring mistake that fails *open*: an off-by-a-zero cap the guard would faithfully enforce. Declare each denomination's `decimals`/`symbol` in an optional `display` section and the echo renders the cap the way you meant it:
+
+```ts
+import { readFileSync } from "node:fs";
+import { loadPolicyFile, parseDisplay, describePolicy } from "x402-spendguard";
+const loaded = loadPolicyFile("./policy.json");
+if (!loaded.ok) throw new Error(`policy invalid [${loaded.reason}]: ${loaded.detail}`);
+const display = parseDisplay(JSON.parse(readFileSync("./policy.json", "utf8")));
+const desc = describePolicy(loaded.value, display.ok ? display.value : undefined);
+// desc.denominations[0].perRequest.human === "50.000000 USDC"  ← if you meant 5, the extra zero is obvious
+```
+
+From the repo you can run the same check as a one-liner: `npx vite-node scripts/validate-policy.ts ./policy.json`.
+
+**4. When a payment is denied, the reason says why.** Every decision carries a stable code; look it up in the **[reason-code legend](docs/reason-codes.md)** — it says what each code means and what to change, and which denials are *correct* rather than misconfigurations (e.g. `bind.amount_mismatch` is a tampered payment, not a setting to fix).
+
+## Wiring it in
+
+The guard interposes at the three points an x402 client exposes, through one binding — the veto happens at the signer, where the *real* struct about to be signed is visible. A complete setup, from policy file to wired client:
+
+```ts
+import {
+  loadPolicyFile, FileSpendStore, systemClock, SpendGuard, createSpendGuardBinding,
+} from "x402-spendguard";
+
+// 1. Load your policy (fails closed on a bad, unreadable, or world-writable file).
+const loaded = loadPolicyFile("./policy.json");
+if (!loaded.ok) throw new Error(`policy invalid [${loaded.reason}]: ${loaded.detail}`);
+
+// 2. Build the guard over a durable, cross-process-safe ledger.
+const store = new FileSpendStore("./ledger", systemClock.now());
+const guard = new SpendGuard(store, systemClock, loaded.value);
+
+// 3. Bind it to the three x402 interposition points.
+const binding = createSpendGuardBinding(guard);
+registerExactEvmScheme(client, { signer: binding.wrapSigner(signer) }); // veto at signing — wire this FIRST
+client.onBeforePaymentCreation(binding.hook);                            // capture the offer
+const guardedFetch = binding.wrapFetch(globalThis.fetch);               // capture the real request origin
+```
+
+`wrapSigner` is the veto and the one wire that fails *open* if you forget it — wire it first. More runnable examples are in [`examples/`](examples/); the full hermetic deny path and a live funded settle are in [`test/e2e/`](test/e2e/).
 
 ```bash
 npm install
