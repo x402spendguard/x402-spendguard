@@ -81,6 +81,9 @@ export const CONFIG_REASONS = {
   "config.json_malformed": { means: "The policy file is not valid JSON.", fix: "Fix the JSON syntax.", when: "policy-load" },
   "wire.unsupported_typed_data": { means: "The EIP-712 typed data is not EIP-3009 TransferWithAuthorization.", fix: "v1 supports EVM exact (EIP-3009) only; other typed data is refused.", when: "payment" },
   "wire.unknown_v1_network": { means: "A v1 network has no known CAIP-2 mapping.", fix: "The network is unrecognized; it cannot be keyed to caps or cross-checked.", when: "payment" },
+  "config.display_invalid": { means: "The optional `display` section is malformed (not an object, or an entry/key is bad).", fix: "display maps a `chain|token` key to { decimals, symbol }; it is display-only and never affects enforcement.", when: "policy-load" },
+  "config.decimals_invalid": { means: "A display `decimals` is not a non-negative integer.", fix: "decimals is the token's base-unit exponent (e.g. 6 for USDC) — a small whole number.", when: "policy-load" },
+  "config.symbol_invalid": { means: "A display `symbol` is not a string.", fix: "symbol is a display-only label (e.g. \"USDC\"); it never affects a decision.", when: "policy-load" },
 } as const;
 
 // ── The remaining codes — carried by ERROR classes / the binding abort, which legitimately pass

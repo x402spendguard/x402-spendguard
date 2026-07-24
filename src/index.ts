@@ -24,6 +24,11 @@ export { assetKey } from "./parse.js";
 // example file would not reach an `npm install` user under files:["dist"]). Fails loud when copied
 // unedited; `writeStarterPolicy` writes it owner-only and refuses to clobber an existing file.
 export { STARTER_POLICY_JSON, writeStarterPolicy } from "./starter-policy.js";
+// The policy ECHO — the fat-finger control. `describePolicy` renders every cap in human units WHEN the
+// user declared its decimals (via the optional `display` section, parsed by `parseDisplay`), so an
+// off-by-a-zero is visible; `renderAmount` is the exact base-unit→human helper. Display-only, never
+// enforced. Ships so an `npm install` user gets the control, not just a repo-side script.
+export { describePolicy, parseDisplay, renderAmount } from "./display.js";
 
 // ── Audit (opt-in, tamper-evident) ─────────────────────────────────────────────────────────────
 export { HashChainDecisionLog } from "./audit/hash-chain-log.js";
@@ -42,6 +47,7 @@ export type { ChainHasher } from "./audit/chain-hasher.js";
 export type { VerifyResult } from "./audit/hash-chain-log.js";
 export type { SpendGuardBinding } from "./adapters/x402-binding.js";
 export type { Result } from "./parse.js";
+export type { Display, DisplayInfo, PolicyDescription, DenominationView, AmountView } from "./display.js";
 export type {
   Policy,
   Caps,
