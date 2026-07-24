@@ -22,6 +22,22 @@ describe("policy echo — the fat-finger control (ONBOARD-03)", () => {
     expect(renderAmount(1_234n, 6)).toBe("0.001234");
     expect(renderAmount(0n, 6)).toBe("0.000000");
     expect(renderAmount(50_000_000n, 0)).toBe("50000000"); // decimals 0 ⇒ base units as-is
+
+    // Exact PAST 2^53 — proves integer-string math, not float (a float would round these).
+    expect(renderAmount(9_007_199_254_740_993n, 0)).toBe("9007199254740993");
+    expect(renderAmount(10n ** 30n + 1n, 18)).toBe("1000000000000.000000000000000001");
+  });
+
+  // SELF-DEFENDING PRIMITIVE (CHENG S4 hardening): renderAmount is exported, so a direct caller has
+  // no parseDisplay boundary in front of it. It must REFUSE bad decimals/base — never emit a malformed
+  // string like ".1000000" (NaN) or "1000000." (-1) or a 300-digit absurdity (1000). Fail loud.
+  it("renderAmount-refuses-bad-input", () => {
+    for (const bad of [-1, 1.5, NaN, 1000]) {
+      expect(() => renderAmount(1_000_000n, bad), `decimals=${bad}`).toThrow(RangeError);
+    }
+    expect(() => renderAmount(-5n, 6), "negative base").toThrow(RangeError);
+    // valid still renders exactly
+    expect(renderAmount(50_000_000n, 6)).toBe("50.000000");
   });
 
   // DEGRADE TO TRUTH, NEVER A LIE: no declared decimals ⇒ withhold the rendering, show grouped base
@@ -71,6 +87,9 @@ describe("parseDisplay — optional, fail-closed, never touches the policy parse
 
     const negDecimals = parseDisplay({ display: { [key]: { decimals: -1 } } });
     expect(negDecimals.ok === false && negDecimals.reason).toBe("config.decimals_invalid");
+
+    const absurdDecimals = parseDisplay({ display: { [key]: { decimals: 1000 } } }); // over MAX_DECIMALS
+    expect(absurdDecimals.ok === false && absurdDecimals.reason).toBe("config.decimals_invalid");
 
     const badSymbol = parseDisplay({ display: { [key]: { decimals: 6, symbol: 42 } } });
     expect(badSymbol.ok === false && badSymbol.reason).toBe("config.symbol_invalid");

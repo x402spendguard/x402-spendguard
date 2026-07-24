@@ -29,6 +29,11 @@ const ok = <T>(value: T): Result<T> => ({ ok: true, value });
 // `reason` carried as a variable (never a raw literal) + typed to the CONFIG partition (reasons.ts).
 const err = <T>(reason: ConfigReason, detail: string): Result<T> => ({ ok: false, reason, detail });
 
+/** Upper bound on token decimals. Real tokens top out near 18 (ether-scale); 36 is a generous
+ *  ceiling that still rejects absurd input. Both `renderAmount` and `parseDisplay` enforce it, so a
+ *  huge/garbage `decimals` can neither be authored nor rendered. */
+const MAX_DECIMALS = 36;
+
 /** Display metadata for one denomination — a USER declaration, never enforced on. `decimals` is the
  *  token's base-unit exponent (6 for USDC, 18 for ether-scale); `symbol` is a display-only label. */
 export interface DisplayInfo {
@@ -62,8 +67,8 @@ export function parseDisplay(raw: unknown): Result<Display> {
       return err("config.display_invalid", `display["${rawKey}"] must be an object with a numeric decimals (and optional symbol).`);
     }
     const info = rawInfo as Record<string, unknown>;
-    if (typeof info.decimals !== "number" || !Number.isInteger(info.decimals) || info.decimals < 0) {
-      return err("config.decimals_invalid", `display["${rawKey}"].decimals must be a non-negative integer.`);
+    if (typeof info.decimals !== "number" || !Number.isInteger(info.decimals) || info.decimals < 0 || info.decimals > MAX_DECIMALS) {
+      return err("config.decimals_invalid", `display["${rawKey}"].decimals must be an integer in [0, ${MAX_DECIMALS}].`);
     }
     let symbol: string | undefined;
     if (info.symbol !== undefined) {
@@ -94,6 +99,12 @@ function parseAssetKeyString(rawKey: string): Result<AssetKey> {
  * digits from the right, zero-padding as needed. e.g. (50000000n, 6) → "50.000000"; (1234n, 6) → "0.001234".
  */
 export function renderAmount(base: bigint, decimals: number): string {
+  // Self-defending: an exported money-render primitive must REFUSE bad input, never emit a malformed
+  // string (a direct caller doesn't have parseDisplay's boundary in front of it). Fail loud.
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > MAX_DECIMALS) {
+    throw new RangeError(`renderAmount: decimals must be an integer in [0, ${MAX_DECIMALS}], got ${decimals}.`);
+  }
+  if (base < 0n) throw new RangeError(`renderAmount: base must be non-negative, got ${base}.`);
   const s = base.toString();
   if (decimals === 0) return s;
   const padded = s.padStart(decimals + 1, "0");
