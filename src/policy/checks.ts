@@ -65,7 +65,8 @@ export function runChecks(
   }
 
   // 3. Optional cross-origin check — the challenge's stated resource origin vs the request origin.
-  //    Off unless the user's policy turns it on (default lives in the default policy file).
+  //    Off unless the user's policy turns it on (default lives in the shipped starter policy —
+  //    policy.example.json / STARTER_POLICY_JSON — not a code constant; POL-01).
   if (policy.requireOriginMatch) {
     const resourceOrigin = originOf(c.resource);
     if (resourceOrigin === null || resourceOrigin !== origin) {

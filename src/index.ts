@@ -20,6 +20,10 @@ export { parsePolicy } from "./parse.js";
 // string — the #1 policy-authoring error surface. `caps` is keyed by `AssetKey`; `assetKey({chain,
 // token})` produces one correctly, and a wrong-shaped key can't be typed by accident.
 export { assetKey } from "./parse.js";
+// The shipped, readable starter policy — the file POL-01 promised. Ships as CODE (a repo-root
+// example file would not reach an `npm install` user under files:["dist"]). Fails loud when copied
+// unedited; `writeStarterPolicy` writes it owner-only and refuses to clobber an existing file.
+export { STARTER_POLICY_JSON, writeStarterPolicy } from "./starter-policy.js";
 
 // ── Audit (opt-in, tamper-evident) ─────────────────────────────────────────────────────────────
 export { HashChainDecisionLog } from "./audit/hash-chain-log.js";

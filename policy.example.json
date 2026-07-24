@@ -1,0 +1,17 @@
+{
+  "halt": false,
+  "allowlist": [
+    { "address": "0xREPLACE_WITH_YOUR_PAYEE_ADDRESS", "chain": "eip155:8453" }
+  ],
+  "caps": {
+    "eip155:8453|0xREPLACE_WITH_TOKEN_CONTRACT_ADDRESS": {
+      "perRequest": "REPLACE_WITH_PER_REQUEST_CAP_IN_BASE_UNITS",
+      "perDomain": "REPLACE_WITH_PER_DOMAIN_CAP_IN_BASE_UNITS",
+      "global": "REPLACE_WITH_GLOBAL_CAP_IN_BASE_UNITS"
+    }
+  },
+  "clockSkewSeconds": "60",
+  "maxAuthLifetimeSeconds": "3600",
+  "windowSeconds": "86400",
+  "requireOriginMatch": true
+}

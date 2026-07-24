@@ -124,7 +124,8 @@ export interface Policy {
    *  zeroes cumulative spend when a window elapses. Policy, not a code constant. */
   windowSeconds: UnixSeconds;
   /** When true, require the challenge.resource origin to match the request origin. Default lives
-   *  in the shipped default policy file, never as a code constant (D-018). */
+   *  in the shipped starter policy (policy.example.json / STARTER_POLICY_JSON), never as a code
+   *  constant (D-018). */
   requireOriginMatch: boolean;
 }
 

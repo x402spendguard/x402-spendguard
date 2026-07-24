@@ -28,6 +28,8 @@ const FROZEN_VALUE_EXPORTS = [
   "loadPolicyFile",
   "parsePolicy",
   "assetKey",
+  "STARTER_POLICY_JSON",
+  "writeStarterPolicy",
   // audit (opt-in, tamper-evident)
   "HashChainDecisionLog",
   "sha256ChainHasher",

@@ -72,11 +72,15 @@ describe("PKG teeth — a real packed-and-installed tarball", () => {
       `
 import {
   SpendGuard, FileSpendStore, systemClock, parsePolicy, createSpendGuardBinding,
-  HashChainDecisionLog, sha256ChainHasher, assetKey,
+  HashChainDecisionLog, sha256ChainHasher, assetKey, STARTER_POLICY_JSON,
 } from "${PKG_NAME}";
 import assert from "node:assert/strict";
 
 const ledger = ${JSON.stringify(ledger)};
+
+// ONBOARD-01/02: the starter reaches an npm-install user as code, and fails LOUD unedited.
+assert.ok(STARTER_POLICY_JSON.includes("REPLACE_WITH"), "starter ships with fail-loud placeholders");
+assert.ok(!parsePolicy(JSON.parse(STARTER_POLICY_JSON)).ok, "unedited starter must be rejected, not silently accepted");
 
 // Build the caps key by construction (the documented way) — proves assetKey ships and is callable.
 const capsKey = assetKey({ chain: "eip155:8453", token: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" });
