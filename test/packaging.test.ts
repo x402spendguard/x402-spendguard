@@ -33,6 +33,10 @@ const FROZEN_VALUE_EXPORTS = [
   "describePolicy",
   "parseDisplay",
   "renderAmount",
+  "serializeSnapshot",
+  "parseSnapshotExport",
+  "writeSnapshotExport",
+  "SNAPSHOT_EXPORT_VERSION",
   // audit (opt-in, tamper-evident)
   "HashChainDecisionLog",
   "sha256ChainHasher",

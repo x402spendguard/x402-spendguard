@@ -117,6 +117,18 @@ function group(s: string): string {
   return s.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
+/** The human display string for an amount: rendered through DECLARED decimals (with the symbol as a
+ *  label), else digit-grouped base units labelled as such. The single place base→display text is
+ *  decided, shared by the snapshot serializer so it can never diverge from the policy echo. Never a
+ *  guessed decimal placement; never a float. */
+export function renderMoneyText(amount: bigint, info?: DisplayInfo): string {
+  if (info && info.decimals !== undefined) {
+    const rendered = renderAmount(amount, info.decimals);
+    return info.symbol ? `${rendered} ${info.symbol}` : rendered;
+  }
+  return `${group(amount.toString())} base units`;
+}
+
 /** One cap's value: the raw base-unit string, and a human rendering IFF decimals were declared. */
 export interface AmountView {
   /** The exact base-unit amount, as a decimal string. Always present — the source of truth. */

@@ -29,6 +29,11 @@ export { STARTER_POLICY_JSON, writeStarterPolicy } from "./starter-policy.js";
 // off-by-a-zero is visible; `renderAmount` is the exact base-unit→human helper. Display-only, never
 // enforced. Ships so an `npm install` user gets the control, not just a repo-side script.
 export { describePolicy, parseDisplay, renderAmount } from "./display.js";
+// Serialize a Snapshot into the portable export the shipped dashboard reads (D-040: a dump-file, not
+// a socket). Money is a tagged envelope + pre-rendered text so a naive parse fails loud instead of
+// silently corrupting past 2^53; `parseSnapshotExport` is the reviver that recovers exact bigints;
+// `writeSnapshotExport` writes it owner-only (0600 — the export carries the counterparty graph).
+export { serializeSnapshot, parseSnapshotExport, writeSnapshotExport, SNAPSHOT_EXPORT_VERSION } from "./serialize.js";
 
 // ── Audit (opt-in, tamper-evident) ─────────────────────────────────────────────────────────────
 export { HashChainDecisionLog } from "./audit/hash-chain-log.js";
@@ -48,6 +53,7 @@ export type { VerifyResult } from "./audit/hash-chain-log.js";
 export type { SpendGuardBinding } from "./adapters/x402-binding.js";
 export type { Result } from "./parse.js";
 export type { Display, DisplayInfo, PolicyDescription, DenominationView, AmountView } from "./display.js";
+export type { SnapshotExport, Money, SerializeOptions } from "./serialize.js";
 export type {
   Policy,
   Caps,
