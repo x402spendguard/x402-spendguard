@@ -34,6 +34,10 @@ export { describePolicy, parseDisplay, renderAmount } from "./display.js";
 // silently corrupting past 2^53; `parseSnapshotExport` is the reviver that recovers exact bigints;
 // `writeSnapshotExport` writes it owner-only (0600 — the export carries the counterparty graph).
 export { serializeSnapshot, parseSnapshotExport, writeSnapshotExport, SNAPSHOT_EXPORT_VERSION } from "./serialize.js";
+// The audit view for the dashboard — DISPLAY data, never an authority. `serializeAudit` reports the
+// chain's own head + self-consistency (no self-attested "verified" verdict — a file can't prove it
+// wasn't rewritten); the authoritative anchored/keyed check is the operator running verify (D-040).
+export { serializeAudit, writeAuditExport, AUDIT_EXPORT_VERSION } from "./serialize.js";
 
 // ── Audit (opt-in, tamper-evident) ─────────────────────────────────────────────────────────────
 export { HashChainDecisionLog } from "./audit/hash-chain-log.js";
@@ -53,7 +57,7 @@ export type { VerifyResult } from "./audit/hash-chain-log.js";
 export type { SpendGuardBinding } from "./adapters/x402-binding.js";
 export type { Result } from "./parse.js";
 export type { Display, DisplayInfo, PolicyDescription, DenominationView, AmountView } from "./display.js";
-export type { SnapshotExport, Money, SerializeOptions } from "./serialize.js";
+export type { SnapshotExport, Money, SerializeOptions, AuditExport } from "./serialize.js";
 export type {
   Policy,
   Caps,

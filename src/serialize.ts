@@ -21,9 +21,12 @@
 import type { Snapshot, AssetKey } from "./types.js";
 import type { Display, DisplayInfo } from "./display.js";
 import { renderMoneyText } from "./display.js";
+import type { HashChainDecisionLog } from "./audit/hash-chain-log.js";
 
 /** Bump on any breaking shape change so a viewer can evolve against a known version. */
 export const SNAPSHOT_EXPORT_VERSION = 1;
+/** Bump on any breaking shape change to the audit export. */
+export const AUDIT_EXPORT_VERSION = 1;
 
 /** A money value on the wire: exact base units under `$b` (for programs, via the reviver) and a
  *  pre-rendered human string under `text` (for the viewer, which does no math). */
@@ -120,8 +123,47 @@ export function parseSnapshotExport(json: string): unknown {
  * any prior file's mode. Overwrites a previous dump (a snapshot is regenerable, point-in-time).
  */
 export async function writeSnapshotExport(path: string, snapshotExport: SnapshotExport): Promise<void> {
+  await atomicWrite600(path, JSON.stringify(snapshotExport, null, 2));
+}
+
+/** Owner-only (`0o600`) atomic write (temp + rename), so every write lands owner-only regardless of a
+ *  prior file's mode. Shared by the snapshot and audit exports — both are ledger-grade sensitive. */
+async function atomicWrite600(path: string, contents: string): Promise<void> {
   const { writeFile, rename } = await import("node:fs/promises");
   const tmp = `${path}.tmp-${process.pid}`;
-  await writeFile(tmp, JSON.stringify(snapshotExport, null, 2), { mode: 0o600 });
+  await writeFile(tmp, contents, { mode: 0o600 });
   await rename(tmp, path);
+}
+
+/**
+ * The audit view for the dashboard — DISPLAY DATA, never an authority.
+ *
+ * A file the guard writes cannot self-attest that its chain is un-rewritten: an attacker who rewrote
+ * the log would rewrite this too. So this reports only what it can honestly self-attest — its own
+ * computed `head` and self-consistency (which catches corruption / naive edits but NOT a full
+ * self-consistent rewrite) — and deliberately carries **no** "anchored/verified" verdict. The viewer
+ * shows `head` labelled "compare to your last-known-good"; the AUTHORITATIVE check is the operator
+ * running `verify-audit` with a head they pinned out-of-band, or a keyed hasher whose key they hold
+ * (D-040 / ANCHOR-01). Same-directory sibling files are not anchors.
+ */
+export interface AuditExport {
+  version: number;
+  /** The chain's computed head. DISPLAY ONLY — compare to your externally-pinned value; this file
+   *  cannot prove it wasn't rewritten. */
+  head: string;
+  /** Self-consistency only: catches corruption / naive edits, NOT a full self-consistent rewrite. */
+  selfConsistent: boolean;
+  /** Where self-verification first failed, if any. */
+  brokenAt: number | null;
+}
+
+/** Project a decision log into the (display-only) audit export. Runs a self-verify (no anchor). */
+export async function serializeAudit(log: HashChainDecisionLog): Promise<AuditExport> {
+  const r = await log.verify();
+  return { version: AUDIT_EXPORT_VERSION, head: r.head, selfConsistent: r.ok, brokenAt: r.brokenAt ?? null };
+}
+
+/** Write the audit export owner-only (`0o600`, atomic) — same ledger-grade care as the snapshot. */
+export async function writeAuditExport(path: string, auditExport: AuditExport): Promise<void> {
+  await atomicWrite600(path, JSON.stringify(auditExport, null, 2));
 }
