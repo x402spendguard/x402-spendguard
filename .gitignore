@@ -9,3 +9,6 @@ dist/
 .env
 .env.*
 !.env.example
+
+# demo run artifacts
+demo-output/

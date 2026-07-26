@@ -52,6 +52,7 @@
     "test:e2e:funded": "vitest run --config vitest.e2e.config.ts test/e2e/funded-settle.e2e.test.ts",
     "test:e2e:smoke": "vitest run --config vitest.e2e.config.ts test/e2e/cross-process-smoke.e2e.test.ts",
     "test:e2e:pack": "vitest run --config vitest.e2e.config.ts test/e2e/pack-install.e2e.test.ts",
+    "demo": "vite-node scripts/demo.ts",
     "traceability": "vite-node scripts/gen-traceability.ts",
     "reason-codes": "vite-node scripts/gen-reason-codes.ts",
     "prepack": "npm run build",
