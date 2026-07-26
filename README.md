@@ -180,6 +180,18 @@ npm install
 npm test          # the hermetic suite (no network, no funds)
 ```
 
+## Seeing it work — the demo
+
+The fastest way to watch the guard stop a drain — clone the repo and run:
+
+```bash
+npm run demo          # ~55s, no funds, nothing settles  (DEMO_PACE=2 to slow it down)
+```
+
+It runs on the **real machinery** (not a mock): a real `@x402` client through a genuine 402 over localhost, the veto firing on the real signed struct, approved payments really signed by a throwaway key. The scenario is the one that matters — a **fooled honest agent** (prompt-injected via a tool response) loops small payments that are each *within* the per-request cap, and the guard's **cumulative** accounting catches the one that would cross the global ceiling; the canary shows the wrapped signer was never reached (`signature route reached: NONE`). It ends by writing a real export you can open in the viewer below.
+
+It states its own boundary as it runs: the agent is a **scripted stand-in** (labeled — a live model would need egress), and the guard stops a *fooled* agent, **not** an attacker who owns the agent's code and calls the signer directly (that's the documented ceiling — see [`THREAT_MODEL.md`](THREAT_MODEL.md)). Every number it prints is read from the real run.
+
 ## Seeing it work — exports and the viewer
 
 The guard can dump what it has enforced to a **file** — never a socket — and a single dependency-free HTML page reads that file to show you spend-vs-caps, the counterparty breakdown, and the audit chain. Because the dashboard is a dump-file plus a static viewer, the [no-egress guarantee](#supply-chain--capabilities) holds unchanged: nothing listens, nothing is served, nothing phones home.
