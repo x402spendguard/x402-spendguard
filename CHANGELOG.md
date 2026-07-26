@@ -5,6 +5,44 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). **This project is `0.x` (pre-1.0): the public API may change between releases, and it is
 not yet production-ready.**
 
+## [0.4.0] — 2026-07-26
+
+Adds a **dashboard / export chapter** — a way to *see* the guard working — built as a dump-file the
+guard writes plus a single dependency-free static viewer that reads it. **No socket, no server, no
+`fetch`**: the export is a file, so the statically-provable no-egress guarantee (the crown jewel)
+holds unchanged, at the viewer edge too. Entirely additive: new barrel exports, no breaking change
+(the existing API and `dist` decision path are unchanged).
+
+### Added
+- **A corruption-resistant export wire format** — `serializeSnapshot(snapshot, opts?)` turns a
+  `SpendGuard.snapshot()` into a portable JSON export, and `writeSnapshotExport(path, export)` writes
+  it **owner-only** `0o600`, atomically. Money is a **tagged envelope** `{ "$b": "<base-units>",
+  "text": "<human>" }`: JSON has no bigint and a base-unit amount routinely exceeds 2⁵³, so a naive
+  `Number()` would silently round it into a confident lie — instead a naive parse yields an *object*
+  (loudly `NaN`), a program recovers the **exact `bigint`** via `parseSnapshotExport` (the shipped
+  reviver), and the `text` is pre-rendered in trusted Node so a viewer displays it and does **no money
+  math at all**. Counterparty-origin redaction is an opt-in caller option (default lossless).
+- **An audit export + authoritative verify** — `serializeAudit(log)` / `writeAuditExport(path, …)`
+  project a `HashChainDecisionLog` into a display-only view (its own `head` + self-consistency, **no**
+  self-attested "verified" verdict — a file an attacker could rewrite cannot make one about itself).
+  The authoritative check is the operator running `scripts/verify-audit.ts` against a head they
+  **pinned out-of-band** (`--expected-head`) or a keyed hasher whose key they hold (`X402_AUDIT_KEY`,
+  taken from the env, never argv). A same-directory sibling file is not an anchor.
+- **A static export viewer** — `viewer/index.html`, a **single dependency-free HTML file** that reads
+  a dumped snapshot or audit export and renders it (spend-vs-caps, the counterparty breakdown, the
+  audit head + self-consistency). It **imports nothing and cannot egress** (no `fetch`, socket,
+  `<script src>`, or external asset), is **math-free** (displays the pre-rendered `text`, so a >2⁵³
+  amount renders exactly and it cannot corrupt an amount on screen), **escapes** attacker-influenced
+  counterparty strings, and shows the audit head as a value to **compare** out-of-band — never as a
+  verdict. Loads local files only; ships in the repo (like the CLIs), obtained from the repo/release.
+
+### Internal
+- **`renderMoneyText`** shared into `src/display.ts` (one source for the pre-rendered `text`, so the
+  envelope's `$b` and `text` cannot diverge). New requirements `EXPORT-01/02/03`, `ANCHOR-01`,
+  `VIEW-01`; each guarantee is mutation-proven where it guards something, and the viewer tests run the
+  **shipped bytes** (the inline logic is extracted from `index.html` and executed) so they can never
+  drift from the artifact.
+
 ## [0.3.0] — 2026-07-24
 
 Adds a **config on-ramp** — the tooling a new user needs to author, check, and understand a policy —

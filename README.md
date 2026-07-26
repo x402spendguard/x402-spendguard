@@ -100,9 +100,9 @@ Read the code. That has always been the deal with a guard.
 
 ## Status
 
-**`v0.3.0` — on [npm](https://www.npmjs.com/package/x402-spendguard): `npm install x402-spendguard`, published from CI (tokenless OIDC) with a signed build provenance attestation.** The guard installs in front of a real `@x402` client and enforces at the moment a payment is signed.
+**`v0.4.0` — on [npm](https://www.npmjs.com/package/x402-spendguard): `npm install x402-spendguard`, published from CI (tokenless OIDC) with a signed build provenance attestation.** The guard installs in front of a real `@x402` client and enforces at the moment a payment is signed.
 
-**Recent highlights:** a **config on-ramp** (0.3.0) — a fail-loud starter policy, a `describePolicy` echo that renders caps in human units so an off-by-a-zero cap is visible at author time (the one authoring error that failed *open*), and a generated deny-reason legend ([docs/reason-codes.md](docs/reason-codes.md)); the property-test layer (mutation-proven); and a **P0 cross-process over-allow, found before publish, was fixed** (ACCT-07; postmortem in [TEST_PLAN.md](TEST_PLAN.md) §9).
+**Recent highlights:** a **dashboard / export chapter** (0.4.0) — the guard dumps what it enforced to a `0o600` file (never a socket), a corruption-resistant wire format keeps money exact past 2⁵³, and a single dependency-free [static viewer](viewer/index.html) renders it while importing nothing and doing no money math (so the no-egress proof holds at the viewer edge too); the audit head is shown as a value to *compare* out-of-band, never a self-attested verdict. Before it: a **config on-ramp** (0.3.0) — a fail-loud starter policy, a `describePolicy` echo that renders caps in human units so an off-by-a-zero cap is visible at author time (the one authoring error that failed *open*), and a generated deny-reason legend ([docs/reason-codes.md](docs/reason-codes.md)); the property-test layer (mutation-proven); and a **P0 cross-process over-allow, found before publish, was fixed** (ACCT-07; postmortem in [TEST_PLAN.md](TEST_PLAN.md) §9).
 
 Still **pre-alpha** (`0.x`): single-agent, testnet-validated, single-tenant trust model (see [THREAT_MODEL.md](THREAT_MODEL.md)). **Not for mainnet.** Zero runtime dependencies; `@x402` is an optional peer dependency.
 
@@ -178,6 +178,33 @@ const guardedFetch = binding.wrapFetch(globalThis.fetch);               // captu
 ```bash
 npm install
 npm test          # the hermetic suite (no network, no funds)
+```
+
+## Seeing it work — exports and the viewer
+
+The guard can dump what it has enforced to a **file** — never a socket — and a single dependency-free HTML page reads that file to show you spend-vs-caps, the counterparty breakdown, and the audit chain. Because the dashboard is a dump-file plus a static viewer, the [no-egress guarantee](#supply-chain--capabilities) holds unchanged: nothing listens, nothing is served, nothing phones home.
+
+```ts
+import { writeSnapshotExport, serializeSnapshot, writeAuditExport, serializeAudit } from "x402-spendguard";
+
+// A point-in-time view of spend vs. caps (read-only; never mutates the ledger).
+await writeSnapshotExport("./export/snapshot.json", serializeSnapshot(await guard.snapshot()));
+
+// If you keep a tamper-evident audit log, dump its display view too.
+await writeAuditExport("./export/audit.json", await serializeAudit(log));
+```
+
+Both files are written **owner-only** (`0o600`) — an export carries your full spend posture and the counterparty graph. Money is stored as a tagged envelope `{ "$b": "<exact base units>", "text": "<human>" }`: a program recovers the exact `bigint` via `parseSnapshotExport`, and the pre-rendered `text` means the viewer displays amounts **without doing any math** (so a >2⁵³ amount can never be rounded into a wrong number on screen).
+
+**To view:** open [`viewer/index.html`](viewer/index.html) from disk in a browser and drop either export onto it. The viewer imports nothing, fetches nothing, and does no money math — everything stays in the tab.
+
+**The audit head is a value to *compare*, not a verdict.** A static file cannot prove it was not rewritten, so the viewer shows the chain head and self-consistency but never claims "verified". The authoritative check is *you* running it against a head you pinned out-of-band:
+
+```bash
+# Compare the log's head to the last-known-good value you recorded elsewhere:
+npx vite-node scripts/verify-audit.ts ./ledger/audit.log --expected-head <your-pinned-head>
+# …or, with a keyed chain whose key only you hold (key from the env, never argv):
+X402_AUDIT_KEY=<key> npx vite-node scripts/verify-audit.ts ./ledger/audit.log
 ```
 
 ## License
