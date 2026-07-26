@@ -182,6 +182,8 @@ npm test          # the hermetic suite (no network, no funds)
 
 ## Seeing it work — the demo
 
+![A fooled agent is prompt-injected into a spend loop; each payment clears the per-request cap, but the guard's cumulative accounting blocks the one that would cross the global ceiling — and the wrapped signer is never reached.](docs/assets/demo.gif)
+
 The fastest way to watch the guard stop a drain — clone the repo and run:
 
 ```bash
