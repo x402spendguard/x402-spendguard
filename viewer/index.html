@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>x402-spendguard — export viewer</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 1.5rem;
+    font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    max-width: 1000px; margin-inline: auto;
+  }
+  h1 { font-size: 1.25rem; margin: 0 0 .25rem; }
+  .sub { color: #667; margin: 0 0 1.25rem; font-size: .9rem; }
+  .drop {
+    border: 2px dashed #99a; border-radius: 10px; padding: 1.25rem;
+    text-align: center; color: #667; margin-bottom: 1.5rem;
+  }
+  .drop.hot { border-color: #4a7; background: rgba(70,170,120,.08); }
+  .drop input { display: block; margin: .5rem auto 0; }
+  section { margin-bottom: 2rem; }
+  section > h2 { font-size: 1rem; border-bottom: 1px solid #99a4; padding-bottom: .3rem; }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+  th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #99a3; }
+  th { color: #667; font-weight: 600; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .key, .head { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85em; }
+  .halt { background: #c0392b; color: #fff; padding: .5rem .75rem; border-radius: 6px; font-weight: 600; }
+  .ok { color: #2a7; }
+  .bad { background: #c0392b; color: #fff; padding: .5rem .75rem; border-radius: 6px; font-weight: 600; }
+  .note { color: #667; font-size: .85rem; margin-top: .4rem; }
+  .empty { color: #99a; font-style: italic; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .disclaim { border-left: 3px solid #d9a441; padding: .4rem .75rem; margin-top: .5rem; color: #775; font-size: .85rem; }
+</style>
+</head>
+<body>
+  <h1>x402-spendguard — export viewer</h1>
+  <p class="sub">
+    A static, offline viewer. It reads a dump file the guard wrote and displays it — it sends nothing,
+    fetches nothing, and does no money math. Everything stays in this tab. Open the page from disk.
+  </p>
+
+  <div class="drop" id="drop">
+    Drop a <code>snapshot</code> or <code>audit</code> export here, or choose a file:
+    <input type="file" id="file" accept=".json,application/json" />
+  </div>
+
+  <section id="snapshot-panel" hidden>
+    <h2>Spend posture</h2>
+    <div id="snapshot-body"></div>
+  </section>
+
+  <section id="audit-panel" hidden>
+    <h2>Audit chain</h2>
+    <div id="audit-body"></div>
+  </section>
+
+  <p class="sub">
+    Nothing to hide from you: this file is plain HTML. github.com/x402spendguard/x402-spendguard
+  </p>
+
+  <script id="viewer-logic">
+    // PURE RENDER LOGIC. It reads the pre-rendered `text` field of every money value and NEVER the
+    // exact base-unit field — so it does no arithmetic on money and cannot be the thing that rounds a
+    // large amount on screen (D1 rendered `text` in trusted, >2^53-tested Node). Escapes every string
+    // it prints: an export carries attacker-influenced counterparty data (a domain origin), so raw
+    // insertion would be an injection sink.
+
+    function esc(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    // A money value → its human text (already grouped, exact). `—` when the value is absent (no cap).
+    function amt(m) {
+      return m && typeof m.text === "string" ? esc(m.text) : "—";
+    }
+
+    function renderSnapshot(snap) {
+      var rows = [];
+      if (snap.halt) {
+        rows.push('<div class="halt">HALTED — the guard has stopped approving payments.</div>');
+      }
+      var win = snap.windowEndsAt === null
+        ? "no rolling window (caps are cumulative)"
+        : "window ends at " + esc(fmtTime(snap.windowEndsAt));
+      rows.push('<p class="note">' + win + "</p>");
+
+      rows.push("<h3>By denomination</h3>");
+      if (!snap.byDenomination || snap.byDenomination.length === 0) {
+        rows.push('<p class="empty">No spend recorded.</p>');
+      } else {
+        var d = ["<table><thead><tr>",
+          "<th>Asset</th><th>Spent</th><th>Remaining</th><th>Per-request cap</th><th>Global cap</th>",
+          "</tr></thead><tbody>"];
+        snap.byDenomination.forEach(function (row) {
+          d.push("<tr>",
+            '<td class="key">' + esc(row.key) + "</td>",
+            '<td class="num">' + amt(row.spent) + "</td>",
+            '<td class="num">' + amt(row.remaining) + "</td>",
+            '<td class="num">' + amt(row.caps && row.caps.perRequest) + "</td>",
+            '<td class="num">' + amt(row.caps && row.caps.global) + "</td>",
+            "</tr>");
+        });
+        d.push("</tbody></table>");
+        rows.push(d.join(""));
+      }
+
+      rows.push("<h3>By counterparty</h3>");
+      if (!snap.byDomain || snap.byDomain.length === 0) {
+        rows.push('<p class="empty">No per-domain activity.</p>');
+      } else {
+        snap.byDomain.forEach(function (dom) {
+          rows.push('<p class="key">' + esc(dom.origin) + "</p>");
+          var t = ["<table><thead><tr><th>Asset</th><th>Spent</th><th>Per-domain cap</th><th>Remaining</th></tr></thead><tbody>"];
+          (dom.byAsset || []).forEach(function (a) {
+            t.push("<tr>",
+              '<td class="key">' + esc(a.key) + "</td>",
+              '<td class="num">' + amt(a.spent) + "</td>",
+              '<td class="num">' + amt(a.perDomainCap) + "</td>",
+              '<td class="num">' + amt(a.remaining) + "</td>",
+              "</tr>");
+          });
+          t.push("</tbody></table>");
+          rows.push(t.join(""));
+        });
+      }
+      return rows.join("");
+    }
+
+    function renderAudit(audit) {
+      var out = [];
+      out.push('<p>Chain head: <span class="head">' + esc(audit.head) + "</span></p>");
+      out.push('<p class="disclaim"><strong>This is a value to compare, not a verdict.</strong> ' +
+        "A static file cannot prove it was not rewritten. To check the chain for real, run " +
+        "<code>verify-audit</code> and compare this head against the last-known-good value you pinned " +
+        "out-of-band (or use a keyed hasher whose key you hold).</p>");
+      if (audit.selfConsistent) {
+        out.push('<p class="ok">Self-consistency check passed (catches corruption and naive edits — ' +
+          "NOT a full rewrite, and NOT a verification).</p>");
+      } else {
+        out.push('<div class="bad">Self-consistency FAILED — the chain broke at entry ' +
+          esc(audit.brokenAt) + ". This export was corrupted or edited.</div>");
+      }
+      return out.join("");
+    }
+
+    // Timestamps are plain Unix seconds in the export (safe integer range). This is date formatting,
+    // not money math — no amount is ever parsed to a number.
+    function fmtTime(unixSeconds) {
+      return new Date(unixSeconds * 1000).toISOString().replace("T", " ").replace(".000Z", " UTC");
+    }
+
+    var V = { esc: esc, renderSnapshot: renderSnapshot, renderAudit: renderAudit };
+
+    // ── DOM bootstrap (dormant when there is no document, e.g. under test) ───────────────────────
+    if (typeof document !== "undefined") {
+      var drop = document.getElementById("drop");
+      var fileInput = document.getElementById("file");
+
+      function show(id, panelId, htmlStr) {
+        document.getElementById(id).innerHTML = htmlStr;
+        document.getElementById(panelId).hidden = false;
+      }
+
+      function ingest(text) {
+        var data;
+        try { data = JSON.parse(text); }
+        catch (e) { alert("Not valid JSON: " + e.message); return; }
+        if (data && Array.isArray(data.byDenomination)) {
+          show("snapshot-body", "snapshot-panel", renderSnapshot(data));
+        } else if (data && typeof data.selfConsistent === "boolean") {
+          show("audit-body", "audit-panel", renderAudit(data));
+        } else {
+          alert("Unrecognized export. Expected a snapshot or audit export from x402-spendguard.");
+        }
+      }
+
+      function readFile(f) {
+        var r = new FileReader();
+        r.onload = function () { ingest(String(r.result)); };
+        r.readAsText(f);
+      }
+
+      fileInput.addEventListener("change", function () {
+        if (fileInput.files && fileInput.files[0]) readFile(fileInput.files[0]);
+      });
+      ["dragenter", "dragover"].forEach(function (ev) {
+        drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add("hot"); });
+      });
+      ["dragleave", "drop"].forEach(function (ev) {
+        drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove("hot"); });
+      });
+      drop.addEventListener("drop", function (e) {
+        var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) readFile(f);
+      });
+    }
+  </script>
+</body>
+</html>
