@@ -295,7 +295,7 @@ async function main(): Promise<void> {
       priceHuman = b.priceHuman;
       await scene("Your budget (rendered by the shipped describePolicy — the real fat-finger control)");
       await say(`  Per-request cap : ${paint(b.perRequestHuman, C.white)}`, 1500);
-      await say(`  Global ceiling  : ${paint(b.capHuman, C.bold, C.white)}   ${paint("← the max this agent can ever spend", C.dim)}`, 2000);
+      await say(`  Global ceiling  : ${paint(b.capHuman, C.bold, C.white)}   ${paint("← cumulative USDC cap, per rolling window", C.dim)}`, 2000);
     },
     onQuery: async (q) => {
       if (q.i === 1) {
