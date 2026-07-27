@@ -28,6 +28,26 @@ describe("guardedFetch — captures the real client-observed origin (DOM-01)", (
     expect(ctx.consume().origin).toBe("shop.example"); // NOT evil-cdn.example
   });
 
+  it("reads the origin from a URL input (not just a string)", async () => {
+    const ctx = new PaymentFlowContext();
+    const inner: FetchLike = async () => resp(402, "https://weather.example/forecast");
+    await guardedFetch(ctx, inner)(new URL("https://weather.example/forecast"));
+    ctx.observeChallenge(challenge());
+    expect(ctx.consume().origin).toBe("weather.example");
+  });
+
+  it("reads the origin from a Request-shaped input (what @x402/fetch hands the transport)", async () => {
+    // The fetch API and high-level wrappers call the transport with a `Request` OBJECT, whose
+    // String() is "[object Request]" — not the URL. Origin must be read from `.url`, or capture
+    // silently breaks and every payment fails closed on context_incomplete. Regression guard for
+    // the integration-fetch e2e (which caught this against the real wrapFetchWithPayment).
+    const ctx = new PaymentFlowContext();
+    const inner: FetchLike = async () => resp(402, "https://weather.example/forecast");
+    await guardedFetch(ctx, inner)({ url: "https://weather.example/forecast" });
+    ctx.observeChallenge(challenge());
+    expect(ctx.consume().origin).toBe("weather.example");
+  });
+
   it("does NOT observe an origin on a non-402 response", async () => {
     const ctx = new PaymentFlowContext();
     const inner: FetchLike = async () => resp(200, "https://x.example/y");

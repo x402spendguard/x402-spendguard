@@ -20,9 +20,30 @@ export interface ResponseLike {
   readonly url: string;
 }
 
+/** A `Request`-shaped input, matched structurally so the guard needs no DOM lib types. The fetch API
+ *  — and high-level wrappers like `@x402/fetch`'s `wrapFetchWithPayment` — build a `new Request(input)`
+ *  and hand the transport that OBJECT, not the URL string; the URL lives on `.url`. */
+export interface RequestLike {
+  readonly url: string;
+}
+
 /** A fetch-like transport, structural so the guard needs no DOM lib types. A real `fetch` is
- *  assignable to it. */
-export type FetchLike<Res extends ResponseLike = ResponseLike> = (input: string | URL, init?: unknown) => Promise<Res>;
+ *  assignable to it, and so is anything that (like `@x402/fetch`) calls the transport with a
+ *  `Request`. Input covers all three shapes the fetch contract permits: string, `URL`, `Request`. */
+export type FetchLike<Res extends ResponseLike = ResponseLike> = (
+  input: string | URL | RequestLike,
+  init?: unknown,
+) => Promise<Res>;
+
+/** The URL string of a fetch input, whichever shape it takes. `String(request)` is "[object Request]"
+ *  — NOT the URL — so a `Request` must be read via `.url`; a `URL` via its href; a string is itself.
+ *  Getting this wrong silently drops the origin, which fails CLOSED (the signer refuses to sign for
+ *  want of a correlated origin), so a mis-read is a false deny, never a mis-attributed budget. */
+function requestUrl(input: string | URL | RequestLike): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  return input.url;
+}
 
 /**
  * Wrap a transport so the guard learns the real origin. On a 402, observe the host of the
@@ -38,8 +59,9 @@ export function guardedFetch<Res extends ResponseLike>(
     const response = await innerFetch(input, init);
     if (response.status === 402) {
       // Key on the client-chosen request host — redirect-immune — NOT the server-controlled
-      // response.url. If no origin can be derived, observe nothing → the signer fails closed.
-      const origin = makeDomain(String(input));
+      // response.url. Read the URL from whatever input shape the caller used (string/URL/Request);
+      // if no origin can be derived, observe nothing → the signer fails closed.
+      const origin = makeDomain(requestUrl(input));
       if (origin.ok) context.observeOrigin(origin.value);
     }
     return response;

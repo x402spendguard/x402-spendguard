@@ -182,6 +182,15 @@ const guardedFetch = wrapFetch(globalThis.fetch);
 
 The only wire left to you — the transport — is the one that fails *closed* if omitted, by design; there is no longer a signer-wrap step to forget. More runnable examples are in [`examples/`](examples/); the full hermetic deny path and a live funded settle are in [`test/e2e/`](test/e2e/).
 
+**Using [`@x402/fetch`](https://www.npmjs.com/package/@x402/fetch)?** If your agent pays with `wrapFetchWithPayment`, nest our transport wrap *inside* it — our origin capture must be the inner fetch so it sees the 402 before the payment is created:
+
+```ts
+import { wrapFetchWithPayment } from "@x402/fetch";
+const payFetch = wrapFetchWithPayment(wrapFetch(globalThis.fetch), client); // guarded AND paying
+```
+
+That single composition is proven end-to-end against the real `wrapFetchWithPayment` in [`test/e2e/integration-fetch.e2e.test.ts`](test/e2e/integration-fetch.e2e.test.ts) — the guard's veto fires through the wrapper on the real policy reason, not an incidental one. (`@x402/axios` and other transports follow the same "wrap the inner fetch" shape.)
+
 ```bash
 npm install
 npm test          # the hermetic suite (no network, no funds)
