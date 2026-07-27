@@ -49,6 +49,14 @@ The guard compares the challenge it received against the authorization about to 
 
 > **v2 note (`upto`).** `upto` signs a *maximum*; the resource server sets the actual charge (0 → max) after consumption, and the client cannot constrain it below the max. When v2 adds `upto`, the rule is: cap against the signed maximum, bind `to == payTo`, bound the deadline, and **disclose to the user that the server may charge up to the maximum.**
 
+## Wiring integrity
+
+The guard's power is the signer wrap (the veto). A wiring API that lets a caller *omit* that wrap fails **open, silently** — the cardinal sin for a guard. So the wiring API must make the fail-open state un-expressible, not merely documented. See [docs/decisions.md D-041](docs/decisions.md) (Finding D, closed).
+
+| ID | Requirement | Threat | Test |
+|----|-------------|--------|------|
+| **WIRE-01** | The wiring API cannot express a silent fail-open. `installSpendGuard` **owns** the two points whose omission would fail open — it registers the payment scheme through a **guarded** signer (never the raw one) and registers the challenge hook itself — and returns **only** the transport wrap, whose omission fails **closed** (no origin → the guarded signer refuses to sign). The public surface exposes **no free-floating signer-wrap** to forget; the removed `createSpendGuardBinding` had one (Finding D). The single residual (a caller who deliberately ignores the guarded signer and registers a raw one) is active circumvention, outside the threat model. | (design) | `installer-owns-the-veto-no-fail-open-wire` |
+
 ## Spend caps
 
 All caps are denominated per **(asset, chain)** and compared in integer smallest-units.

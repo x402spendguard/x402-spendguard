@@ -71,7 +71,7 @@ describe("PKG teeth — a real packed-and-installed tarball", () => {
       consumer,
       `
 import {
-  SpendGuard, FileSpendStore, systemClock, parsePolicy, createSpendGuardBinding,
+  SpendGuard, FileSpendStore, systemClock, parsePolicy, installSpendGuard,
   HashChainDecisionLog, sha256ChainHasher, assetKey, STARTER_POLICY_JSON,
 } from "${PKG_NAME}";
 import assert from "node:assert/strict";
@@ -109,9 +109,22 @@ assert.ok(Array.isArray(snap.byDenomination), "snapshot exposes byDenomination")
 assert.ok(Array.isArray(snap.byDomain), "snapshot exposes byDomain");
 assert.equal(snap.halt, false, "snapshot reflects kill-switch state");
 
-// The adapter wiring loads and returns the three interposition points.
-const binding = createSpendGuardBinding(guard);
-for (const k of ["wrapSigner", "hook", "wrapFetch"]) assert.equal(typeof binding[k], "function", k);
+// The atomic installer loads from the barrel and wires the guard: it OWNS the hook + the scheme
+// registration (handing the GUARDED signer to the injected registrar), and returns ONLY the
+// fail-closed transport wrap — there is no free-floating wrapSigner that could be silently omitted.
+let hookRegistered = false;
+let registeredSigner = null;
+const rawSigner = { address: "0xcccccccccccccccccccccccccccccccccccccccc", async signTypedData() { return "0x"; } };
+const fakeClient = { onBeforePaymentCreation() { hookRegistered = true; return fakeClient; } };
+const install = installSpendGuard(fakeClient, {
+  guard,
+  signer: rawSigner,
+  registerScheme: (_c, guarded) => { registeredSigner = guarded; },
+});
+assert.deepEqual(Object.keys(install), ["wrapFetch"], "install exposes ONLY wrapFetch");
+assert.equal(typeof install.wrapFetch, "function", "install returns the transport wrap");
+assert.ok(hookRegistered, "install owns the hook registration");
+assert.notEqual(registeredSigner, rawSigner, "the GUARDED signer is registered, never the raw one");
 
 // The audit primitive constructs from the barrel too.
 const log = new HashChainDecisionLog(ledger + ".audit", sha256ChainHasher);
@@ -173,8 +186,8 @@ try {
     // Positive control: importing types FROM THE BARREL must compile clean.
     writeFileSync(
       join(installDir, "good.ts"),
-      `import type { Policy, SpendGuardBinding, SpendStore } from "${PKG_NAME}";\n` +
-        `export const _p = (x: Policy): SpendGuardBinding | SpendStore => x as any;\n`,
+      `import type { Policy, SpendGuardInstall, SpendStore } from "${PKG_NAME}";\n` +
+        `export const _p = (x: Policy): SpendGuardInstall | SpendStore => x as any;\n`,
     );
     const good = run(tsc, ["-p", mkTsconfig("tsconfig.good.json", "./good.ts")], { cwd: installDir });
     expect(good.code, `barrel type import should compile:\n${good.stdout}`).toBe(0);

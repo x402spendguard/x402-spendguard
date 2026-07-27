@@ -1,5 +1,5 @@
 // DENY-PATH END-TO-END HARNESS — the real @x402 client, a genuine 402 over real localhost
-// HTTP, driven through our `createSpendGuardBinding`, must reach a signature ONLY through our
+// HTTP, driven through our `installSpendGuard`, must reach a signature ONLY through our
 // wrapped `signTypedData`, and on a policy DENY must throw with NO signing route touched.
 //
 // Why this is the gate before any funded wallet: unit tests prove the guard decides correctly
@@ -19,7 +19,7 @@ import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
 import { x402Client, x402HTTPClient } from "@x402/core/client";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import type { PaymentRequired } from "@x402/core/types";
-import { createSpendGuardBinding } from "../../src/adapters/x402-binding.js";
+import { installSpendGuard } from "../../src/adapters/x402-binding.js";
 import { SpendGuard, emptyState, type Clock, type SpendStore, type Version } from "../../src/accounting/guard.js";
 import { systemClock } from "../../src/adapters/system-clock.js";
 import { parsePolicy } from "../../src/parse.js";
@@ -124,18 +124,21 @@ function prV1(): PaymentRequired {
  *  With no `signerOverride` it uses the recording canary; pass a real signer (e.g. a viem
  *  LocalAccount) to prove the allowlist-wrapped signer still satisfies the real SDK. */
 async function attempt(pr: PaymentRequired, guard: SpendGuard, signerOverride?: ClientEvmSigner) {
-  const binding = createSpendGuardBinding(guard);
   const canary = makeCanary();
   const client = new x402Client();
-  // registerExactEvmScheme wires BOTH generations (v2 eip155:* + v1 legacy names) onto our
-  // wrapped signer — the guard now sits on the one signing route the scheme can use.
-  registerExactEvmScheme(client, { signer: binding.wrapSigner(signerOverride ?? canary.signer) as never });
-  client.onBeforePaymentCreation(binding.hook);
+  // installSpendGuard OWNS the scheme registration (through the injected registerExactEvmScheme
+  // bridge, handed the GUARDED signer) and the challenge hook — so there is no piecewise wrapSigner
+  // to forget. registerExactEvmScheme wires BOTH generations onto that one guarded signing route.
+  const inst = installSpendGuard(client, {
+    guard,
+    signer: signerOverride ?? canary.signer,
+    registerScheme: (c, signer) => registerExactEvmScheme(c, { signer: signer as never }),
+  });
   const httpClient = new x402HTTPClient(client);
   const server = await startX402Server(pr);
   try {
-    // Real HTTP round-trip through our transport wrap → the client-observed origin is captured.
-    const wrapped = binding.wrapFetch(((input, init) => fetch(input as string, init as RequestInit)) as FetchLike<Response>);
+    // Real HTTP round-trip through the installer's transport wrap → the client-observed origin is captured.
+    const wrapped = inst.wrapFetch(((input, init) => fetch(input as string, init as RequestInit)) as FetchLike<Response>);
     const res = await wrapped(server.url);
     const headerVal = res.headers.get("PAYMENT-REQUIRED");
     const body = headerVal ? undefined : await res.json();
@@ -152,7 +155,7 @@ async function attempt(pr: PaymentRequired, guard: SpendGuard, signerOverride?: 
   }
 }
 
-describe("deny-path e2e — the real @x402 client cannot route around the veto", () => {
+describe("deny-path e2e — the real @x402 client cannot route around the veto (wired via installSpendGuard)", () => {
   for (const [gen, pr] of [["v2", prV2()], ["v1", prV1()]] as const) {
     it(`${gen}: kill switch — halt denies before any signing route is reached`, async () => {
       const { error, touched, status } = await attempt(pr, guardWith(policyOf({ halt: true })));
@@ -221,4 +224,36 @@ describe("deny-path e2e — the real @x402 client cannot route around the veto",
       expect(error?.message ?? "").not.toMatch(/\bhalt\b|allowlist\.|cap\.|origin\.mismatch|unguarded_signing_route/);
     });
   }
+
+  it("omitting the transport wrap fails CLOSED against the real client (no origin → context_incomplete)", async () => {
+    // The one caller responsibility the installer cannot own — and it is safe by construction: skip
+    // wrapFetch, drive the real client with a RAW fetch, and payment creation is denied for want of
+    // an origin, never signed. This is the live execution proof that the un-ownable point fails
+    // closed (the asymmetry the whole installer design rests on).
+    const canary = makeCanary();
+    const client = new x402Client();
+    installSpendGuard(client, {
+      guard: guardWith(policyOf({})), // would ALLOW — so a deny here is the missing-origin gate, not policy
+      signer: canary.signer,
+      registerScheme: (c, signer) => registerExactEvmScheme(c, { signer: signer as never }),
+    });
+    const httpClient = new x402HTTPClient(client);
+    const server = await startX402Server(prV2());
+    try {
+      const res = await fetch(server.url); // RAW fetch — transport wrap deliberately omitted
+      const body = res.headers.get("PAYMENT-REQUIRED") ? undefined : await res.json();
+      const paymentRequired = httpClient.getPaymentRequiredResponse((n) => res.headers.get(n), body);
+      let error: Error | undefined;
+      try {
+        await client.createPaymentPayload(paymentRequired);
+      } catch (e) {
+        error = e as Error;
+      }
+      expect(error).toBeDefined();
+      expect(error!.message).toMatch(/context_incomplete/);
+      expect(canary.touched).toEqual([]);
+    } finally {
+      await server.close();
+    }
+  });
 });

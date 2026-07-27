@@ -100,9 +100,9 @@ Read the code. That has always been the deal with a guard.
 
 ## Status
 
-**`v0.4.0` — on [npm](https://www.npmjs.com/package/x402-spendguard): `npm install x402-spendguard`, published from CI (tokenless OIDC) with a signed build provenance attestation.** The guard installs in front of a real `@x402` client and enforces at the moment a payment is signed.
+**`v0.5.0` — on [npm](https://www.npmjs.com/package/x402-spendguard): `npm install x402-spendguard`, published from CI (tokenless OIDC) with a signed build provenance attestation.** The guard installs in front of a real `@x402` client and enforces at the moment a payment is signed.
 
-**Recent highlights:** a **dashboard / export chapter** (0.4.0) — the guard dumps what it enforced to a `0o600` file (never a socket), a corruption-resistant wire format keeps money exact past 2⁵³, and a single dependency-free [static viewer](viewer/index.html) renders it while importing nothing and doing no money math (so the no-egress proof holds at the viewer edge too); the audit head is shown as a value to *compare* out-of-band, never a self-attested verdict. Before it: a **config on-ramp** (0.3.0) — a fail-loud starter policy, a `describePolicy` echo that renders caps in human units so an off-by-a-zero cap is visible at author time (the one authoring error that failed *open*), and a generated deny-reason legend ([docs/reason-codes.md](docs/reason-codes.md)); the property-test layer (mutation-proven); and a **P0 cross-process over-allow, found before publish, was fixed** (ACCT-07; postmortem in [TEST_PLAN.md](TEST_PLAN.md) §9).
+**Recent highlights:** an **atomic wiring API** (0.5.0) — `installSpendGuard` owns the signer wrap and the offer hook so the veto **cannot be silently omitted**; it replaces the removed `createSpendGuardBinding`, whose free-floating `wrapSigner` could be forgotten and fail *open* (Finding D, now closed by construction — WIRE-01). Before it: a **dashboard / export chapter** (0.4.0) — the guard dumps what it enforced to a `0o600` file (never a socket), a corruption-resistant wire format keeps money exact past 2⁵³, and a single dependency-free [static viewer](viewer/index.html) renders it while importing nothing and doing no money math (so the no-egress proof holds at the viewer edge too); the audit head is shown as a value to *compare* out-of-band, never a self-attested verdict. Before it: a **config on-ramp** (0.3.0) — a fail-loud starter policy, a `describePolicy` echo that renders caps in human units so an off-by-a-zero cap is visible at author time (the one authoring error that failed *open*), and a generated deny-reason legend ([docs/reason-codes.md](docs/reason-codes.md)); the property-test layer (mutation-proven); and a **P0 cross-process over-allow, found before publish, was fixed** (ACCT-07; postmortem in [TEST_PLAN.md](TEST_PLAN.md) §9).
 
 Still **pre-alpha** (`0.x`): single-agent, testnet-validated, single-tenant trust model (see [THREAT_MODEL.md](THREAT_MODEL.md)). **Not for mainnet.** Zero runtime dependencies; `@x402` is an optional peer dependency.
 
@@ -151,12 +151,13 @@ From the repo you can run the same check as a one-liner: `npx vite-node scripts/
 
 ## Wiring it in
 
-The guard interposes at the three points an x402 client exposes, through one binding — the veto happens at the signer, where the *real* struct about to be signed is visible. A complete setup, from policy file to wired client:
+The guard interposes at the points an x402 client exposes, and `installSpendGuard` wires them **atomically** so the veto can't be forgotten: you hand it your raw signer, it wraps it and registers the *wrapped* one, and it owns the offer hook — the veto happens at the signer, where the *real* struct about to be signed is visible. A complete setup, from policy file to wired client:
 
 ```ts
 import {
-  loadPolicyFile, FileSpendStore, systemClock, SpendGuard, createSpendGuardBinding,
+  loadPolicyFile, FileSpendStore, systemClock, SpendGuard, installSpendGuard,
 } from "x402-spendguard";
+import { registerExactEvmScheme } from "@x402/evm/exact/client";
 
 // 1. Load your policy (fails closed on a bad, unreadable, or world-writable file).
 const loaded = loadPolicyFile("./policy.json");
@@ -166,14 +167,20 @@ if (!loaded.ok) throw new Error(`policy invalid [${loaded.reason}]: ${loaded.det
 const store = new FileSpendStore("./ledger", systemClock.now());
 const guard = new SpendGuard(store, systemClock, loaded.value);
 
-// 3. Bind it to the three x402 interposition points.
-const binding = createSpendGuardBinding(guard);
-registerExactEvmScheme(client, { signer: binding.wrapSigner(signer) }); // veto at signing — wire this FIRST
-client.onBeforePaymentCreation(binding.hook);                            // capture the offer
-const guardedFetch = binding.wrapFetch(globalThis.fetch);               // capture the real request origin
+// 3. Install it atomically. You never hold an unwrapped-signer wire to forget: installSpendGuard
+//    wraps your signer, registers the WRAPPED one through your one-line bridge, and owns the hook.
+const { wrapFetch } = installSpendGuard(client, {
+  guard,
+  signer,                                                                  // your raw EVM signer — it gets wrapped
+  registerScheme: (client, signer) => registerExactEvmScheme(client, { signer }), // register the GUARDED signer it hands you
+});
+
+// 4. Route your transport through wrapFetch (captures the real request origin). Omitting it fails
+//    CLOSED — the guarded signer refuses to sign without a correlated origin — so it can't fail open.
+const guardedFetch = wrapFetch(globalThis.fetch);
 ```
 
-`wrapSigner` is the veto and the one wire that fails *open* if you forget it — wire it first. More runnable examples are in [`examples/`](examples/); the full hermetic deny path and a live funded settle are in [`test/e2e/`](test/e2e/).
+The only wire left to you — the transport — is the one that fails *closed* if omitted, by design; there is no longer a signer-wrap step to forget. More runnable examples are in [`examples/`](examples/); the full hermetic deny path and a live funded settle are in [`test/e2e/`](test/e2e/).
 
 ```bash
 npm install

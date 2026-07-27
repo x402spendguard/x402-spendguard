@@ -11,7 +11,11 @@
 // ── Construct & wire (the documented flow) ─────────────────────────────────────────────────────
 export { SpendGuard } from "./accounting/guard.js";
 export { LoggingGuard } from "./audit/decision-log.js";
-export { createSpendGuardBinding } from "./adapters/x402-binding.js";
+// Atomically wire the guard into an x402 client so the veto CANNOT be forgotten: it owns the hook +
+// the scheme registration (through your injected registrar, handed the GUARDED signer), and returns
+// only the fail-closed transport wrap. Replaces the removed `createSpendGuardBinding`, whose
+// free-floating `wrapSigner` could be silently omitted → a fail-open (Finding D). See docs/decisions.
+export { installSpendGuard } from "./adapters/x402-binding.js";
 export { FileSpendStore } from "./adapters/file-spend-store.js";
 export { systemClock } from "./adapters/system-clock.js";
 export { loadPolicyFile } from "./adapters/policy-file-loader.js";
@@ -54,7 +58,7 @@ export type { ChainHasher } from "./audit/chain-hasher.js";
 
 // ── Types you name in signatures ───────────────────────────────────────────────────────────────
 export type { VerifyResult } from "./audit/hash-chain-log.js";
-export type { SpendGuardBinding } from "./adapters/x402-binding.js";
+export type { SpendGuardInstall } from "./adapters/x402-binding.js";
 export type { Result } from "./parse.js";
 export type { Display, DisplayInfo, PolicyDescription, DenominationView, AmountView } from "./display.js";
 export type { SnapshotExport, Money, SerializeOptions, AuditExport } from "./serialize.js";

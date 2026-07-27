@@ -16,7 +16,7 @@ import { x402Client, x402HTTPClient } from "@x402/core/client";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { HTTPFacilitatorClient } from "@x402/core/http";
 import type { PaymentRequired, PaymentRequirements } from "@x402/core/types";
-import { createSpendGuardBinding } from "../../src/adapters/x402-binding.js";
+import { installSpendGuard } from "../../src/adapters/x402-binding.js";
 import { SpendGuard, emptyState, type SpendStore, type Version } from "../../src/accounting/guard.js";
 import { systemClock } from "../../src/adapters/system-clock.js";
 import { parsePolicy } from "../../src/parse.js";
@@ -60,11 +60,14 @@ describe.skipIf(!KEY)("FUNDED settle (base-sepolia, real USDC moves) — opt-in 
     };
     const guard = new SpendGuard(store, systemClock, policy.value);
 
-    // Wire the real @x402 client with our binding and the REAL funded account (allowlist-wrapped).
-    const binding = createSpendGuardBinding(guard);
+    // Wire the real @x402 client via the atomic installer with the REAL funded account. The install
+    // owns the scheme registration (through the injected bridge, handed the GUARDED signer) + hook.
     const client = new x402Client();
-    registerExactEvmScheme(client, { signer: binding.wrapSigner(account as unknown as ClientEvmSigner) as never });
-    client.onBeforePaymentCreation(binding.hook);
+    const inst = installSpendGuard(client, {
+      guard,
+      signer: account as unknown as ClientEvmSigner,
+      registerScheme: (c, signer) => registerExactEvmScheme(c, { signer: signer as never }),
+    });
     const httpClient = new x402HTTPClient(client);
 
     // A genuine 402 for the compliant payment (served locally; self-certified by the helper).
@@ -74,7 +77,7 @@ describe.skipIf(!KEY)("FUNDED settle (base-sepolia, real USDC moves) — opt-in 
     const server = await startX402Server(pr);
     let paymentPayload: unknown;
     try {
-      const wrapped = binding.wrapFetch(((i, init) => fetch(i as string, init as RequestInit)) as FetchLike<Response>);
+      const wrapped = inst.wrapFetch(((i, init) => fetch(i as string, init as RequestInit)) as FetchLike<Response>);
       const res = await wrapped(server.url);
       const header = res.headers.get("PAYMENT-REQUIRED");
       const body = header ? undefined : await res.json();

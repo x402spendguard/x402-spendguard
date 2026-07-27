@@ -95,8 +95,8 @@ Paste the `tx=0x…` hash into `https://sepolia.basescan.org` to see the on‑ch
 
 1. Builds a guard whose policy **allows** exactly this payment (payTo on the allowlist, caps sized
    to admit the amount) — the same `SpendGuard` the library ships.
-2. Wires the real `@x402` client with our `createSpendGuardBinding` and your **real** funded account,
-   wrapped by the allowlist signer (`guardedSigner`).
+2. Wires the real `@x402` client with our `installSpendGuard` and your **real** funded account,
+   which the installer wraps with the allowlist signer (`guardedSigner`) before registering it.
 3. Drives a genuine 402 → the guard runs at the signer wrap, **allows**, and the real account
    produces a genuine EIP‑3009 signature. It asserts the guard **recorded the spend** (write‑ahead).
 4. Calls the facilitator’s `verify` (asserts `isValid`) then `settle` (asserts `success` + an

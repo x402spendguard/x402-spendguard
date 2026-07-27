@@ -12,6 +12,10 @@ import { guardedFetch, type FetchLike, type ResponseLike } from "./x402-transpor
 import type { Authorizer } from "../audit/decision-log.js";
 import type { ReasonCode } from "../reasons.js";
 
+// This module imports NO `@x402` package: the client's registration surface is declared STRUCTURALLY
+// (`BeforeHookClientLike`) and a test asserts a real `x402Client` is assignable to it, so drift is
+// caught without coupling the guard to the SDK — and the guard stays inside the no-egress core.
+
 /** Structural match of @x402/core's `PaymentCreationContext` (2.18.0). `selectedRequirements`
  *  is the union of both generations' offer shapes — `x402Version` on `paymentRequired` selects
  *  which fields the hook reads (v1: `maxAmountRequired` + loose network; v2: `amount` + CAIP-2). */
@@ -51,35 +55,66 @@ export function challengeCaptureHook(context: PaymentFlowContext): BeforePayment
   };
 }
 
-/** The pieces the caller wires into their x402 client, all sharing one flow context. */
-export interface SpendGuardBinding {
-  /** The shared correlation context (usually you don't touch this directly). */
-  context: PaymentFlowContext;
+/**
+ * The x402 client's registration surface `installSpendGuard` OWNS. Structural (no `@x402` import);
+ * a real `x402Client` is assignable to it (asserted in a test). Only `onBeforePaymentCreation` is
+ * needed here — the scheme registration goes through the injected `registerScheme` bridge, which
+ * receives the concrete client type `C` so the caller's `registerExactEvmScheme(...)` type-checks.
+ */
+export interface BeforeHookClientLike {
+  onBeforePaymentCreation(hook: BeforePaymentCreationHookLike): unknown;
+}
+
+/** What `installSpendGuard` returns. Deliberately ONLY the transport wrap: omitting it fails CLOSED
+ *  (no origin → the signer refuses to sign), so — unlike a returned signer-wrapper — it cannot be a
+ *  silent fail-open. There is no `wrapSigner` here to forget: the install already wrapped it. */
+export interface SpendGuardInstall {
   /**
-   * MANDATORY WIRE (Finding D). Wrap your EVM signer and pass the RESULT to the x402 EVM scheme.
-   * The veto *is* this wrap — if you forget it and pass your raw signer, the guard never runs and
-   * every payment is signed unchecked, SILENTLY. Unlike `wrapFetch`/`hook` (whose omission fails
-   * closed via an incomplete context), a missing `wrapSigner` fails OPEN and cannot self-detect.
-   * Wire this one first.
+   * Wrap your x402 transport (fetch) and use the RESULT as the client's transport. This is the one
+   * remaining caller step — and it is safe: if you forget it, no origin is observed and the guarded
+   * signer fails closed. It never fails open.
    */
-  wrapSigner: <S extends ClientEvmSigner>(signer: S) => S;
-  /** Register on the client: `client.onBeforePaymentCreation(binding.hook)`. */
-  hook: BeforePaymentCreationHookLike;
-  /** Wrap your fetch; pass the result as the x402 transport. */
   wrapFetch: <Res extends ResponseLike>(fetch: FetchLike<Res>) => FetchLike<Res>;
 }
 
 /**
- * Bind a guard (a `SpendGuard`, optionally `LoggingGuard`-wrapped) to the three x402
- * interposition points. The returned pieces share one `PaymentFlowContext`, so origin
- * (transport), challenge (hook), and struct (signer) correlate for each payment flow.
+ * Atomically wire a guard into an x402 client so the veto CANNOT be forgotten. This closes the
+ * Finding-D fail-open: the guard's power lived in wrapping the signer, and a caller who forgot to
+ * wrap (or passed the raw signer to the scheme) got a silent, un-self-detectable fail-open.
+ *
+ * The fix is structural, not a warning: `installSpendGuard` OWNS the two points whose omission could
+ * fail open — it registers the challenge hook itself, and it registers the payment scheme through a
+ * GUARDED signer (you hand it the raw signer; it wraps it; you never hold a "wrap" step to skip).
+ * The only point it cannot own — the transport — is exactly the one that fails CLOSED on omission,
+ * so it is safely returned to you as `wrapFetch`.
+ *
+ * `registerScheme` is injected rather than imported so this core stays `@x402`-free (no-egress proof
+ * + standalone install intact) and scheme-family-agnostic. It RECEIVES the guarded signer; the
+ * idiomatic bridge just forwards it:
+ *
+ * ```ts
+ * const { wrapFetch } = installSpendGuard(client, {
+ *   guard,
+ *   signer,                                             // your raw EVM signer — WE wrap it
+ *   registerScheme: (client, signer) => registerExactEvmScheme(client, { signer }),
+ * });
+ * // ...then route your transport through wrapFetch and drive the client as usual.
+ * ```
+ *
+ * The single residual footgun is a caller who deliberately IGNORES the guarded signer their bridge
+ * is handed and substitutes a raw one — active circumvention by someone wiring their own code, which
+ * is the "attacker owns the agent" case already outside the threat model (README / THREAT_MODEL).
+ * `guard` is any `Authorizer` — a `SpendGuard`, optionally `LoggingGuard`-wrapped.
  */
-export function createSpendGuardBinding(guard: Authorizer): SpendGuardBinding {
+export function installSpendGuard<S extends ClientEvmSigner, C extends BeforeHookClientLike>(
+  client: C,
+  opts: { guard: Authorizer; signer: S; registerScheme: (client: C, guardedSigner: S) => void },
+): SpendGuardInstall {
   const context = new PaymentFlowContext();
-  return {
-    context,
-    wrapSigner: (signer) => guardedSigner(signer, guard, context),
-    hook: challengeCaptureHook(context),
-    wrapFetch: (fetch) => guardedFetch(context, fetch),
-  };
+  // Wrap FIRST, then register the wrapped signer — the caller's bridge only ever sees the guarded one.
+  const guarded = guardedSigner(opts.signer, opts.guard, context);
+  opts.registerScheme(client, guarded);
+  // Own the hook so it cannot be forgotten (its omission fails closed too, but owning it is free).
+  client.onBeforePaymentCreation(challengeCaptureHook(context));
+  return { wrapFetch: (fetch) => guardedFetch(context, fetch) };
 }

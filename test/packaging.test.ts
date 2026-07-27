@@ -22,7 +22,7 @@ const FROZEN_VALUE_EXPORTS = [
   // construct + wire (the documented flow)
   "SpendGuard",
   "LoggingGuard",
-  "createSpendGuardBinding",
+  "installSpendGuard",
   "FileSpendStore",
   "systemClock",
   "loadPolicyFile",

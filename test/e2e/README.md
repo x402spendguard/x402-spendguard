@@ -8,7 +8,7 @@ unit isolation. Unit tests show the engine decides right; this shows the real SD
 
 [`deny-path.e2e.test.ts`](./deny-path.e2e.test.ts) drives the **real** `@x402` client through a
 **genuine 402** served over real localhost HTTP ([`x402-local-server.ts`](./x402-local-server.ts)),
-with our `createSpendGuardBinding` installed, and asserts:
+with our `installSpendGuard` atomic wiring installed, and asserts:
 
 - **Deny propagates, no signature produced.** Kill switch, off-allowlist payee, and over-cap
   amount each abort the real `createPaymentPayload` with the guard's specific reason

@@ -5,6 +5,49 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). **This project is `0.x` (pre-1.0): the public API may change between releases, and it is
 not yet production-ready.**
 
+## [0.5.0] — 2026-07-27
+
+Closes **Finding D** — the one place the wiring API could fail **open, silently**. The guard's power
+is the signer wrap (the veto); the removed `createSpendGuardBinding` handed the caller a free-floating
+`wrapSigner` they had to remember to apply *and* thread into scheme registration. Forgetting it (or
+registering the raw signer) meant every payment was signed unchecked, with nothing to self-detect —
+the cardinal sin for a guard. This release makes that state **un-expressible**, not merely documented.
+
+**Breaking change** (cheap now — `0.x`, no consumers yet to break). If you wired the guard, replace
+`createSpendGuardBinding` with `installSpendGuard`:
+
+```ts
+// before (0.4.x): three pieces, wrapSigner easy to forget → silent fail-open
+const binding = createSpendGuardBinding(guard);
+registerExactEvmScheme(client, { signer: binding.wrapSigner(signer) });
+client.onBeforePaymentCreation(binding.hook);
+const guardedFetch = binding.wrapFetch(fetch);
+
+// after (0.5.0): the installer OWNS the wrap + hook; only the fail-closed transport is yours
+const { wrapFetch } = installSpendGuard(client, {
+  guard,
+  signer, // your raw signer — installSpendGuard wraps it and registers the WRAPPED one
+  registerScheme: (client, signer) => registerExactEvmScheme(client, { signer }),
+});
+const guardedFetch = wrapFetch(fetch);
+```
+
+### Changed
+- **`installSpendGuard(client, { guard, signer, registerScheme })` replaces `createSpendGuardBinding`**
+  as the blessed wiring path. It wraps your signer internally and registers the **wrapped** one
+  through your one-line `registerScheme` bridge, and it registers the challenge hook itself — so there
+  is no signer-wrap step left to forget. It returns only `{ wrapFetch }`; omitting the transport wrap
+  fails **closed** (no origin → the guarded signer refuses to sign), so — unlike the old `wrapSigner`
+  — nothing on the surface can fail open. The `@x402` scheme registrar is *injected* (not imported),
+  so the guard core stays `@x402`-free (no-egress proof + standalone install intact) and works for any
+  scheme family. New requirement **WIRE-01**; the real-client deny-path e2e is rewired onto it and
+  proven (the veto still fires; verified by mutation — register the raw signer and the suite goes red).
+
+### Removed
+- **`createSpendGuardBinding` and the `SpendGuardBinding` type** — the footgun-shaped surface whose
+  `wrapSigner` could be silently omitted (Finding D). A deprecated fail-open path is still a reachable
+  fail-open path, so it is removed, not deprecated. Use `installSpendGuard` / `SpendGuardInstall`.
+
 ## [0.4.0] — 2026-07-26
 
 Adds a **dashboard / export chapter** — a way to *see* the guard working — built as a dump-file the

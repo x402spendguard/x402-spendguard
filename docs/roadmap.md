@@ -9,9 +9,18 @@ Convention: each item names its **gate** (what must be true before it ships) and
 
 ## Next slices (near term)
 
+- **Wiring fail-open (Finding D) — CLOSED (D-041, 0.5.0).** The public wiring API could fail *open,
+  silently*: `createSpendGuardBinding` handed out a free-floating `wrapSigner` a caller could forget,
+  and only the signer omission failed open (hook/transport fail closed). Fixed **by construction**:
+  `installSpendGuard` owns the signer wrap + hook and returns only the fail-closed transport wrap, so
+  the fail-open state is un-expressible; `createSpendGuardBinding`/`SpendGuardBinding` removed (breaking,
+  cheap at 0.x). Requirement **WIRE-01**; deny-path e2e rewired onto the installer and mutation-proven
+  (register the raw signer → suite red). The `@x402` scheme registrar is injected, so the core stays
+  `@x402`-free (no-egress proof + standalone install intact). See [[feedback-go-to-root-under-pushback]].
+
 - **SDK adapter — the drop-in integration.** **v2 + v1 wire paths DONE** (D-026, D-027): wire
   normalization for both generations, the signer-wrap veto core, transport-capture for honest
-  DOM-01, and the `createSpendGuardBinding` drop-in, all against verified `@x402/core@2.18.0`. The
+  DOM-01, and the `installSpendGuard` atomic wiring (was `createSpendGuardBinding`; D-041), all against verified `@x402/core@2.18.0`. The
   v1 path proved small once source-verified — the current `@x402/core` client fires
   `onBeforePaymentCreation` and signs via the same `signTypedData` for BOTH generations, so one
   hook dispatches on `x402Version` and only the challenge shape (loose network name,
