@@ -5,7 +5,7 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). **This project is `0.x` (pre-1.0): the public API may change between releases, and it is
 not yet production-ready.**
 
-## [Unreleased]
+## [0.6.0] — 2026-07-28
 
 Additive since 0.5.0 — the **integration + decision-sink** chapter. No breaking change.
 
