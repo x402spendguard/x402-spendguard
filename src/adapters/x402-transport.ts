@@ -47,9 +47,10 @@ function requestUrl(input: string | URL | RequestLike): string {
 
 /**
  * Wrap a transport so the guard learns the real origin. On a 402, observe the host of the
- * response URL (post-redirect) into the flow context. If no origin can be derived, observe
- * nothing — the context stays incomplete and the signer fails closed, rather than attributing
- * spend to a guessed domain. Every response is passed through unchanged.
+ * CLIENT-CHOSEN request URL (the `input` the client called — redirect-immune), NOT the
+ * server-controlled response URL, into the flow context (DOM-01, Finding C). If no origin can be
+ * derived, observe nothing — the context stays incomplete and the signer fails closed, rather than
+ * attributing spend to a guessed domain. Every response is passed through unchanged.
  */
 export function guardedFetch<Res extends ResponseLike>(
   context: PaymentFlowContext,
