@@ -124,6 +124,14 @@ All caps are denominated per **(asset, chain)** and compared in integer smallest
 | **PRIV-03** | No telemetry. Absent, not opt-out. | T12 | `no-telemetry-calls` |
 | **PRIV-04** | The spend ledger is created **owner-private (`0o600`)** — spend amounts, origins, and the counterparty graph are private payment data (the same footing as the decision log's owner-only creation). Applies on **creation** only; a pre-existing file keeps its own mode (user-controlled, like CONF-01). | T12 | `ledger-created-owner-private` |
 
+## Notification egress
+
+The decision log is owner-only and carries the full counterparty tuple; that is its job. A **notification** is the one artifact that leaves the machine — an operator-wired notifier reads the local log and *sends* an alert over the network. So the notification projection defaults to the minimum useful, the same deny-all-by-default discipline applied to egress. The redaction default is set by destination: a local export defaults *lossless* (hiding the owner's data from the owner is paternalism); an alert, which egresses, defaults *redacted*.
+
+| ID | Requirement | Threat | Test |
+|----|-------------|--------|------|
+| **ALERT-01** | `toAlert(record)` is **redacted by default**: it carries the *fact* of a decision — `seq`, `at`, `verdict`, `reason` — and **by construction** no counterparty tuple (`to`/`origin`/`amount`) and no free-text `detail`. It is a hand-listed minimal projection (like `toLogEntry` for PRIV-02), so a sensitive field cannot leak into a notification by accident; `seq` locates the full record in the local, owner-only log so an operator can look up the details on the box without any of it crossing the wire. The **sending** of a notification lives in an operator-wired notifier outside the core (never `src/`), so the no-egress proof holds — the core projects and reads locally, it never reaches out. | T12 | `alert-is-redacted-by-default` |
+
 ## Audit log integrity (tamper-evidence)
 
 The decision log is the forensic record (AS3) and the read-API's tightest rung. Its integrity is **tamper-*evidence* (detection), not tamper-*prevention*** — and, per FAIL-03, an audit-integrity failure is **forensic, never enforcement**: it surfaces loudly and never gates a payment (so it can never become a DoS). Consistent with the trust model ([THREAT_MODEL.md](THREAT_MODEL.md) §3): opportunistic hardening through a seam, honest about its limits.

@@ -47,6 +47,16 @@ export { serializeAudit, writeAuditExport, AUDIT_EXPORT_VERSION } from "./serial
 export { HashChainDecisionLog } from "./audit/hash-chain-log.js";
 export { sha256ChainHasher, hmacChainHasher } from "./audit/chain-hasher.js";
 
+// ── The decision sink: notify/receipt from the durable log, without the core ever sending ────────
+// `readDecisionLogAfter(path, afterSeq)` is the out-of-process consumption seam — a cursor reader of
+// the durable decision log (the same seam the dashboard reads), so a slow notifier never touches the
+// payment path. `toAlert(record)` is the REDACTED-BY-DEFAULT notification projection: it carries the
+// fact of a decision (seq/at/verdict/reason) and by construction NOT the counterparty tuple, because
+// a notification is the one artifact that leaves the machine. Both are pure/local — the SENDING lives
+// in an operator-wired notifier outside the core (see examples/), so the no-egress proof holds.
+export { readDecisionLogAfter } from "./adapters/decision-log-reader.js";
+export { toAlert } from "./audit/alert.js";
+
 // ── Errors a consumer catches ──────────────────────────────────────────────────────────────────
 export { PaymentBlockedError } from "./adapters/x402-guarded-signer.js";
 export { SnapshotUnreadableError } from "./accounting/snapshot.js";
@@ -57,7 +67,8 @@ export type { DecisionLog, Authorizer, LogEntry } from "./audit/decision-log.js"
 export type { ChainHasher } from "./audit/chain-hasher.js";
 
 // ── Types you name in signatures ───────────────────────────────────────────────────────────────
-export type { VerifyResult } from "./audit/hash-chain-log.js";
+export type { VerifyResult, ChainedRecord } from "./audit/hash-chain-log.js";
+export type { Alert } from "./audit/alert.js";
 export type { SpendGuardInstall } from "./adapters/x402-binding.js";
 export type { Result } from "./parse.js";
 export type { Display, DisplayInfo, PolicyDescription, DenominationView, AmountView } from "./display.js";

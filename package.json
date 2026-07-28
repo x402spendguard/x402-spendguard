@@ -56,7 +56,8 @@
     "traceability": "vite-node scripts/gen-traceability.ts",
     "reason-codes": "vite-node scripts/gen-reason-codes.ts",
     "prepack": "npm run build",
-    "prepublishOnly": "npm run typecheck && npm test"
+    "prepublishOnly": "npm run typecheck && npm test",
+    "notify": "vite-node scripts/decision-notifier.ts"
   },
   "devDependencies": {
     "@types/node": "^20.19.43",

@@ -5,6 +5,32 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). **This project is `0.x` (pre-1.0): the public API may change between releases, and it is
 not yet production-ready.**
 
+## [Unreleased]
+
+Additive since 0.5.0 — the **integration + decision-sink** chapter. No breaking change.
+
+### Added
+- **The decision sink — alerting without the core ever reaching out.** `readDecisionLogAfter(path,
+  afterSeq)` is an out-of-process cursor reader of the durable decision log (the same seam the
+  dashboard reads): it tracks the record's `seq`, resumes across restarts, and drops nothing because
+  the log *is* the buffer — so a slow notifier can never add latency to a payment. `toAlert(record)`
+  is the **redacted-by-default** notification projection (**ALERT-01**): it carries the *fact* of a
+  decision (`seq`/`at`/`verdict`/`reason`) and, by construction, **not** the counterparty tuple
+  (`to`/`origin`/`amount`), because a notification is the one artifact that leaves the machine — the
+  `seq` points at the full record in the local, owner-only log. The **send** lives only in an
+  operator-wired notifier outside the core (never `src/`), so the no-egress proof holds. A complete
+  runnable reference is `scripts/decision-notifier.ts` (`npm run notify`). New barrel exports:
+  `readDecisionLogAfter`, `toAlert`, and the `Alert` / `ChainedRecord` types.
+
+### Fixed
+- **`@x402/fetch` composition — the guard now vetoes through the standard high-level paid-fetch.**
+  `wrapFetchWithPayment` hands the inner fetch a `Request` object; `guardedFetch` was deriving the
+  origin via `String(input)` (`"[object Request]"`, not the URL), so origin capture silently broke
+  and every payment through the real wrapper failed **closed** on `context_incomplete`. It now reads
+  the URL from `string | URL | Request` (structural, no DOM dep), and `FetchLike` is widened so
+  `wrapFetchWithPayment(wrapFetch(fetch), client)` type-checks. Proven end-to-end in
+  `test/e2e/integration-fetch.e2e.test.ts`. (It failed closed — a false deny, never a false allow.)
+
 ## [0.5.0] — 2026-07-27
 
 Closes **Finding D** — the one place the wiring API could fail **open, silently**. The guard's power

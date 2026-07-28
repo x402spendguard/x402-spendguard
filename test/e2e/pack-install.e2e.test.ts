@@ -73,6 +73,7 @@ describe("PKG teeth — a real packed-and-installed tarball", () => {
 import {
   SpendGuard, FileSpendStore, systemClock, parsePolicy, installSpendGuard,
   HashChainDecisionLog, sha256ChainHasher, assetKey, STARTER_POLICY_JSON,
+  readDecisionLogAfter, toAlert,
 } from "${PKG_NAME}";
 import assert from "node:assert/strict";
 
@@ -129,6 +130,18 @@ assert.notEqual(registeredSigner, rawSigner, "the GUARDED signer is registered, 
 // The audit primitive constructs from the barrel too.
 const log = new HashChainDecisionLog(ledger + ".audit", sha256ChainHasher);
 assert.equal(typeof log.append, "function");
+
+// The decision-sink primitives ship + work from the real tarball: append a record carrying the full
+// counterparty tuple, read it back out-of-process, and confirm toAlert redacts it for a notification.
+await log.append({ v: 1, at: "1700000000", verdict: "deny", reason: "cap.global", detail: "d",
+  origin: "secret.example", chain: "eip155:8453",
+  asset: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  to: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", amount: "500000" });
+const recs = readDecisionLogAfter(ledger + ".audit", -1);
+assert.ok(recs.length >= 1, "readDecisionLogAfter reads records from the durable log");
+const alert = toAlert(recs[recs.length - 1]);
+assert.deepEqual(Object.keys(alert).sort(), ["at", "reason", "seq", "verdict"], "toAlert is redacted (no to/origin/amount)");
+assert.equal(alert.reason, "cap.global");
 
 console.log("OK");
 `,

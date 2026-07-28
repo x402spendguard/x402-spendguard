@@ -237,6 +237,25 @@ npx vite-node scripts/verify-audit.ts ./ledger/audit.log --expected-head <your-p
 X402_AUDIT_KEY=<key> npx vite-node scripts/verify-audit.ts ./ledger/audit.log
 ```
 
+## Notifications — alerting without the core ever reaching out
+
+Where the viewer is a point-in-time pull, the **sink** is the streaming sibling: a separate process reads the decision log the guard already wrote and turns each new decision into an alert ("your agent tried to spend — blocked"). Two things keep it honest:
+
+- **It reads the durable log out-of-process, so it can never slow a payment.** The guard writes the log synchronously (a decision that returns was recorded); the notifier consumes it on its own time. It tracks a cursor (the record's `seq`), so it resumes across restarts and drops nothing — the log *is* the buffer. `readDecisionLogAfter(path, afterSeq)` is that cursor reader.
+- **The alert is redacted by default, because it's the one thing that leaves the machine.** `toAlert(record)` carries the *fact* of a decision — `seq`, time, `verdict`, `reason` — and **by construction** not the counterparty tuple (`to`/`origin`/`amount`). The `seq` points you at the full record in your local, owner-only log. The core never sends: the **send** — a webhook, Slack, SMS — lives only in your notifier process, outside the guard. Widening the payload is your explicit choice, made knowing it egresses.
+
+```ts
+import { readDecisionLogAfter, toAlert } from "x402-spendguard";
+
+for (const record of readDecisionLogAfter("./ledger/audit.log", lastSeq)) {
+  const alert = toAlert(record);          // redacted here — the raw record never reaches your sender
+  await sendToYourChannel(alert);         // the ONE egress point, and it's your code, not the core's
+  lastSeq = alert.seq;                    // persist this to resume
+}
+```
+
+A complete, runnable reference — reader → `toAlert` → console send → cursor file — is in [`scripts/decision-notifier.ts`](scripts/decision-notifier.ts); run it with `npm run notify` to watch redacted alerts drain from a sample log.
+
 ## License
 
 MIT (open-core: the guard is and stays free/open; a hosted version + dashboard may come later).

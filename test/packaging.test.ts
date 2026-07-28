@@ -44,6 +44,9 @@ const FROZEN_VALUE_EXPORTS = [
   "HashChainDecisionLog",
   "sha256ChainHasher",
   "hmacChainHasher",
+  // the decision sink (out-of-process consumption + redacted alert projection)
+  "readDecisionLogAfter",
+  "toAlert",
   // errors a consumer catches
   "PaymentBlockedError",
   "SnapshotUnreadableError",
