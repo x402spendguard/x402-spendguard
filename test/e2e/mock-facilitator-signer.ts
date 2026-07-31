@@ -1,5 +1,10 @@
 // A MOCK FacilitatorEvmSigner — the chain-faking half of an honest x402 sandbox facilitator.
 //
+// CANONICAL HOME: the standalone, published tool lives in its own repo — x402-bench
+// (github.com/x402spendguard/x402-bench). THIS is a minimal LOCAL TEST FIXTURE, kept here so the
+// offline mock-settle proof (which tests OUR guard) runs standalone; the dogfood end-state is to
+// import x402-bench once it's on npm. Keep the two in sync until then.
+//
 // THE HONESTY INVARIANT (why this is not the xpaysh/x402-local "rubber-stamp" trap):
 // We do NOT write our own facilitator. We inject this signer into the REAL @x402/evm
 // `ExactEvmScheme` (via the real `x402Facilitator`), so every DETERMINISTIC security check runs
