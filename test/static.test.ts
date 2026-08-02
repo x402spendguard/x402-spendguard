@@ -21,7 +21,9 @@ function srcFiles(dir = srcDir): [string, string][] {
   return out;
 }
 
-/** Strip comments and string/template literals so we scan CODE, not prose or messages. */
+/** Strip comments and string/template literals so we scan CODE, not prose or messages. Use this for
+ *  CALL/identifier patterns (`fetch(`, `Date.now(`), so a name appearing inside a string message can't
+ *  false-positive. Do NOT use it for import-specifier matching — it blanks the specifier (see below). */
 function stripCommentsAndStrings(code: string): string {
   return code
     .replace(/\/\*[\s\S]*?\*\//g, " ")
@@ -29,6 +31,15 @@ function stripCommentsAndStrings(code: string): string {
     .replace(/`(?:[^`\\]|\\.)*`/g, " ")
     .replace(/"(?:[^"\\]|\\.)*"/g, " ")
     .replace(/'(?:[^'\\]|\\.)*'/g, " ");
+}
+
+/** Strip ONLY comments, KEEPING string literals — so import/require MODULE SPECIFIERS survive to be
+ *  matched. Matching module bans against fully string-stripped code is why the old import denylist was
+ *  silently VACUOUS: the `"node:net"` specifier was blanked to whitespace before the pattern ran, so a
+ *  planted `import ... from "node:net"` in src/ passed the "no-egress" test. Import patterns anchor to
+ *  from/import/require, so a `//`-mangled URL left inside a surviving string can't false-positive. */
+function stripCommentsOnly(code: string): string {
+  return code.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/.*$/gm, " ");
 }
 
 describe("supply chain (DEP-01)", () => {
@@ -40,20 +51,29 @@ describe("supply chain (DEP-01)", () => {
 });
 
 describe("no egress (PRIV-01, PRIV-03)", () => {
-  const forbidden = [
-    /\bfrom\s+["']node:(http|https|net|dgram|dns|tls)["']/,
-    /\bfrom\s+["'](http|https|net|axios|undici|node-fetch|ws|got)["']/,
-    /\brequire\(\s*["'](node:)?(http|https|net|axios|undici|node-fetch|ws)["']/,
-    /\bfetch\s*\(/,
-    /\bXMLHttpRequest\b/,
-    /\bnavigator\b/,
+  // MODULE bans — a module the core imports could reach outside the process (network) or spawn an
+  // external program (child_process). Matched against comment-stripped code that KEEPS strings, so the
+  // specifier is visible. Covers static `from "x"`, side-effect `import "x"`, dynamic `import("x")`,
+  // and `require("x")`. `child_process` is banned by decision D-042: the core must never spawn a
+  // subprocess — a capability like ACL/icacls hardening belongs in a sibling package, never a carve-out
+  // in this proof (the same reasoning that kept the routing socket out of the core; see decisions.md).
+  const forbiddenImports = [
+    /(?:\bfrom|\bimport|\brequire)\s*\(?\s*["'](?:node:)?(?:child_process|net|http|https|http2|dgram|dns|tls)["']/,
+    /(?:\bfrom|\bimport|\brequire)\s*\(?\s*["'](?:axios|undici|node-fetch|ws|got)["']/,
   ];
+  // CALL/global bans — matched against fully-stripped code (no strings) so a name inside a string
+  // message can't false-positive.
+  const forbiddenCalls = [/\bfetch\s*\(/, /\bXMLHttpRequest\b/, /\bnavigator\b/];
 
   it("core-has-no-egress", () => {
     for (const [path, code] of srcFiles()) {
-      const stripped = stripCommentsAndStrings(code);
-      for (const pat of forbidden) {
-        expect(pat.test(stripped), `${path} matches ${pat}`).toBe(false);
+      const specifiers = stripCommentsOnly(code);
+      const calls = stripCommentsAndStrings(code);
+      for (const pat of forbiddenImports) {
+        expect(pat.test(specifiers), `${path} imports an egress-capable module (${pat})`).toBe(false);
+      }
+      for (const pat of forbiddenCalls) {
+        expect(pat.test(calls), `${path} matches ${pat}`).toBe(false);
       }
     }
   });
@@ -79,9 +99,14 @@ describe("injected clock and store (INJ-01)", () => {
           expect(pat.test(stripped), `${path} reads an ambient clock/rng via ${pat}`).toBe(false);
         }
       }
-      // The pure policy core opens no store (no filesystem). Adapters/accounting may.
+      // The pure policy core opens no store (no filesystem). Adapters/accounting may. Matched on
+      // comment-stripped-but-string-kept code (the `from "node:fs"` check was vacuous the same way).
       if (path.includes("/policy/")) {
-        expect(/\bfrom\s+["']node:fs["']/.test(stripped), `${path} imports fs`).toBe(false);
+        const specifiers = stripCommentsOnly(code);
+        expect(
+          /(?:\bfrom|\bimport|\brequire)\s*\(?\s*["'](?:node:)?fs(?:\/promises)?["']/.test(specifiers),
+          `${path} imports fs`,
+        ).toBe(false);
       }
     }
   });
