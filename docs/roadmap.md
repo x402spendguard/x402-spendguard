@@ -90,6 +90,15 @@ Convention: each item names its **gate** (what must be true before it ships) and
     **detects** the fork (fail-loud, forensic-only) — a CAS-for-the-log (mirroring the ledger, D-031)
     would *prevent* it. Gated on a real multi-writer-one-log need. (D-036.)
 
+- **Policy linter — DONE (LINT-01, D-043).** `lintPolicy` advises on *structural contradictions* a
+  policy can contain while still parsing and enforcing safely: a **dead cap** (caps not in
+  `perRequest ≤ perDomain ≤ global` order → the outer cap can never bind), an **unpayable allowlist
+  entry** (a destination allowlisted on a chain with no caps denomination → CAP-05 denies it), and the
+  mirror **unreachable denomination**. Reports *contradictions, never choices* (mechanism-not-policy —
+  it never judges a value, only flags inert structure). Pure, advisory-only (never gates enforcement;
+  `parsePolicy` stays the trust gate); the layer above the `describePolicy` human-units echo
+  (ONBOARD-03). Clean policy ⇒ zero findings (non-vacuity anchor).
+
 ## Tracked deferrals
 
 - **ACCT-05 — cross-process spend integrity. DONE (D-031).** Closed by a **topology-agnostic

@@ -33,6 +33,7 @@ const FROZEN_VALUE_EXPORTS = [
   "describePolicy",
   "parseDisplay",
   "renderAmount",
+  "lintPolicy",
   "serializeSnapshot",
   "parseSnapshotExport",
   "writeSnapshotExport",
