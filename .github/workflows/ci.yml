@@ -14,6 +14,9 @@ jobs:
         with:
           node-version: "20"
           cache: npm
+      # These steps mirror `npm run verify` (see package.json / CONTRIBUTING.md) — keep the two in
+      # sync so a green local `verify` means a green `test` job here. Kept as granular steps (not a
+      # single `npm run verify`) so a failure annotates the exact step in the GitHub UI.
       - run: npm ci
       - run: npm run typecheck
       - run: npm test

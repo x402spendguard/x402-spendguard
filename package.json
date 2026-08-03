@@ -55,6 +55,8 @@
     "demo": "vite-node scripts/demo.ts",
     "traceability": "vite-node scripts/gen-traceability.ts",
     "reason-codes": "vite-node scripts/gen-reason-codes.ts",
+    "//verify": "The LOCAL mirror of CI's `test` job — run before every push so 'green locally' means 'green in CI'. Beyond the default gate it runs the two generated-artifact STALENESS checks that live OUTSIDE `npm test` (regenerate TRACEABILITY.md / docs/reason-codes.md, fail if the committed copy drifted). Those diff gates are CI-only by nature (they write files then diff the tree), which is exactly how a stale TRACEABILITY.md passed `npm test` and still broke CI. Keep in sync with .github/workflows/ci.yml's `test` job.",
+    "verify": "npm run typecheck && npm test && npm run traceability && git diff --exit-code TRACEABILITY.md && npm run reason-codes && git diff --exit-code docs/reason-codes.md",
     "prepack": "npm run build",
     "prepublishOnly": "npm run typecheck && npm test",
     "notify": "vite-node scripts/decision-notifier.ts"
