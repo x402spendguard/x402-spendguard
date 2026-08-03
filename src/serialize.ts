@@ -127,9 +127,15 @@ export async function writeSnapshotExport(path: string, snapshotExport: Snapshot
 }
 
 /** Owner-only (`0o600`) atomic write (temp + rename), so every write lands owner-only regardless of a
- *  prior file's mode. Shared by the snapshot and audit exports — both are ledger-grade sensitive. */
+ *  prior file's mode. Shared by the snapshot and audit exports — both are ledger-grade sensitive. The
+ *  parent directory is created if absent (recursive, owner-only `0o700` — consistent with the
+ *  ledger-grade posture, so an auto-created export dir is never world-traversable), so a caller can
+ *  point the export at a fresh subdirectory without a separate `mkdir` — a missing parent used to
+ *  throw a confusing `ENOENT` on the internal `.tmp-` path. An existing dir's mode is left untouched. */
 async function atomicWrite600(path: string, contents: string): Promise<void> {
-  const { writeFile, rename } = await import("node:fs/promises");
+  const { writeFile, rename, mkdir } = await import("node:fs/promises");
+  const { dirname } = await import("node:path");
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const tmp = `${path}.tmp-${process.pid}`;
   await writeFile(tmp, contents, { mode: 0o600 });
   await rename(tmp, path);

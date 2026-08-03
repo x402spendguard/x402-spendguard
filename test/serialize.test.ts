@@ -107,4 +107,24 @@ describe("writeSnapshotExport — the dumped file is ledger-grade sensitive (EXP
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("creates-a-missing-parent-directory-owner-only-not-enoent", async (ctx) => {
+    // The README's own example writes to `./export/snapshot.json`; before the fix a missing parent
+    // threw a confusing `ENOENT` on the internal `.tmp-` path. The write must create the parent
+    // (recursively) — and, since the export carries the counterparty graph, the auto-created dir is
+    // owner-only 0o700, never world-traversable. `writeAuditExport` shares the same `atomicWrite600`.
+    const base = mkdtempSync(join(tmpdir(), "x402-export-"));
+    try {
+      const path = join(base, "nested", "deeper", "snapshot.json"); // parents do NOT exist yet
+      await writeSnapshotExport(path, serializeSnapshot(snap(), { display })); // must not throw ENOENT
+      const revived = parseSnapshotExport(readFileSync(path, "utf8")) as { byDenomination: { spent: bigint }[] };
+      expect(revived.byDenomination[0].spent).toBe(BIG); // file landed and round-trips
+      if (process.platform !== "win32") {
+        expect(statSync(path).mode & 0o777).toBe(0o600); // file owner-only
+        expect(statSync(join(base, "nested", "deeper")).mode & 0o777).toBe(0o700); // auto-created dir owner-only
+      }
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+  });
 });

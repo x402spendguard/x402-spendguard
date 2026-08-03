@@ -77,18 +77,20 @@ This is the same claim as **No egress** above, stated at the level a scanner see
 
 ## Documentation
 
-- **[THREAT_MODEL.md](THREAT_MODEL.md)** — adversaries, assets, trust boundary, and what we do and do not defend.
-- **[REQUIREMENTS.md](REQUIREMENTS.md)** — numbered, testable requirements, each traced to a threat and a test.
-- **[TRACEABILITY.md](TRACEABILITY.md)** — the requirements-traceability matrix: every requirement → its verifying test(s) → status. Generated from the suite (`npm run traceability`) and CI-checked so it can't drift.
-- **[TEST_PLAN.md](TEST_PLAN.md)** — testing methodology: how we prove the requirements hold.
-- **[docs/reason-codes.md](docs/reason-codes.md)** — the deny-reason legend: every code the guard emits, what it means, and what to change — grouped by where you hit it. Generated from the code, CI-checked so it can't drift.
-- **[policy.example.json](policy.example.json)** — the annotated starter policy (also shipped in code as `STARTER_POLICY_JSON`); every field, with fail-loud placeholders.
-- **[SECURITY.md](SECURITY.md)** — how to report a vulnerability, and our disclosure commitment.
-- **[docs/verifying-releases.md](docs/verifying-releases.md)** — how to independently verify a release's signed build provenance attestation (and a heads-up about a false alarm from older npm).
-- **[docs/decisions.md](docs/decisions.md)** — the decision record: what we chose, why, and what we rejected.
-- **[docs/roadmap.md](docs/roadmap.md)** — tracked future work and deferrals, each with its rationale and gate.
-- **[docs/x402-protocol-notes.md](docs/x402-protocol-notes.md)** — the x402 protocol facts a guard depends on, verified against source.
-- **[docs/prior-art.md](docs/prior-art.md)** — existing x402 guards, read at the source level, credited and compared.
+<!-- Absolute repo URLs (not relative) so they resolve from a locally-installed README too, where these
+     files are not present (the tarball ships `dist` only). They point at `main`, which tracks releases. -->
+- **[THREAT_MODEL.md](https://github.com/x402spendguard/x402-spendguard/blob/main/THREAT_MODEL.md)** — adversaries, assets, trust boundary, and what we do and do not defend.
+- **[REQUIREMENTS.md](https://github.com/x402spendguard/x402-spendguard/blob/main/REQUIREMENTS.md)** — numbered, testable requirements, each traced to a threat and a test.
+- **[TRACEABILITY.md](https://github.com/x402spendguard/x402-spendguard/blob/main/TRACEABILITY.md)** — the requirements-traceability matrix: every requirement → its verifying test(s) → status. Generated from the suite (`npm run traceability`) and CI-checked so it can't drift.
+- **[TEST_PLAN.md](https://github.com/x402spendguard/x402-spendguard/blob/main/TEST_PLAN.md)** — testing methodology: how we prove the requirements hold.
+- **[docs/reason-codes.md](https://github.com/x402spendguard/x402-spendguard/blob/main/docs/reason-codes.md)** — the deny-reason legend: every code the guard emits, what it means, and what to change — grouped by where you hit it. Generated from the code, CI-checked so it can't drift.
+- **[policy.example.json](https://github.com/x402spendguard/x402-spendguard/blob/main/policy.example.json)** — the annotated starter policy (also shipped in code as `STARTER_POLICY_JSON`); every field, with fail-loud placeholders.
+- **[SECURITY.md](https://github.com/x402spendguard/x402-spendguard/blob/main/SECURITY.md)** — how to report a vulnerability, and our disclosure commitment.
+- **[docs/verifying-releases.md](https://github.com/x402spendguard/x402-spendguard/blob/main/docs/verifying-releases.md)** — how to independently verify a release's signed build provenance attestation (and a heads-up about a false alarm from older npm).
+- **[docs/decisions.md](https://github.com/x402spendguard/x402-spendguard/blob/main/docs/decisions.md)** — the decision record: what we chose, why, and what we rejected.
+- **[docs/roadmap.md](https://github.com/x402spendguard/x402-spendguard/blob/main/docs/roadmap.md)** — tracked future work and deferrals, each with its rationale and gate.
+- **[docs/x402-protocol-notes.md](https://github.com/x402spendguard/x402-spendguard/blob/main/docs/x402-protocol-notes.md)** — the x402 protocol facts a guard depends on, verified against source.
+- **[docs/prior-art.md](https://github.com/x402spendguard/x402-spendguard/blob/main/docs/prior-art.md)** — existing x402 guards, read at the source level, credited and compared.
 
 ## Authorship
 
@@ -153,6 +155,8 @@ From the repo you can run the same check as a one-liner: `npx vite-node scripts/
 
 The guard interposes at the points an x402 client exposes, and `installSpendGuard` wires them **atomically** so the veto can't be forgotten: you hand it your raw signer, it wraps it and registers the *wrapped* one, and it owns the offer hook — the veto happens at the signer, where the *real* struct about to be signed is visible. A complete setup, from policy file to wired client:
 
+**Prerequisite.** The wiring below imports *your* x402 SDK — `client`, `signer`, and the scheme registrar are yours to bring. Install the peers you already pay with: `npm install @x402/core @x402/evm` (add `@x402/fetch` if you pay via paid-fetch, and `viem` for an EVM signer). The guard declares them as *optional* peers and imports none of them at runtime — a bare `npm install x402-spendguard` stays dependency-free; these are the SDK you run to make payments in the first place.
+
 ```ts
 import {
   loadPolicyFile, FileSpendStore, systemClock, SpendGuard, installSpendGuard,
@@ -191,14 +195,17 @@ const payFetch = wrapFetchWithPayment(wrapFetch(globalThis.fetch), client); // g
 
 That single composition is proven end-to-end against the real `wrapFetchWithPayment` in [`test/e2e/integration-fetch.e2e.test.ts`](test/e2e/integration-fetch.e2e.test.ts) — the guard's veto fires through the wrapper on the real policy reason, not an incidental one. (`@x402/axios` and other transports follow the same "wrap the inner fetch" shape.)
 
+**Verifying from source.** The published package ships `dist` only (no tests in the tarball), so the suite runs from a clone, not from an `npm install`:
+
 ```bash
+git clone https://github.com/x402spendguard/x402-spendguard && cd x402-spendguard
 npm install
 npm test          # the hermetic suite (no network, no funds)
 ```
 
 ## Seeing it work — the demo
 
-![A fooled agent is prompt-injected into a spend loop; each payment clears the per-request cap, but the guard's cumulative accounting blocks the one that would cross the global ceiling — and the wrapped signer is never reached.](docs/assets/demo.gif)
+![A fooled agent is prompt-injected into a spend loop; each payment clears the per-request cap, but the guard's cumulative accounting blocks the one that would cross the global ceiling — and the wrapped signer is never reached.](https://raw.githubusercontent.com/x402spendguard/x402-spendguard/main/docs/assets/demo.gif)
 
 The fastest way to watch the guard stop a drain — clone the repo and run:
 
