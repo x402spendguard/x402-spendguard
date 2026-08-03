@@ -5,6 +5,43 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). **This project is `0.x` (pre-1.0): the public API may change between releases, and it is
 not yet production-ready.**
 
+## [0.7.0] — 2026-08-03
+
+Additive since 0.6.0 — the **config-linter + wrap-up** chapter. No breaking change.
+
+### Added
+- **Policy linter — `lintPolicy` (LINT-01).** An advisory, pure check for *structural contradictions*
+  in a parsed policy: a **dead cap** (caps not in `perRequest ≤ perDomain ≤ global` order, so the
+  outer cap can never bind), an **unpayable allowlist entry** (a destination allowlisted on a chain
+  with no caps denomination — CAP-05 denies every payment to it), and the mirror **unreachable
+  denomination**. It reports *contradictions, never choices* (mechanism-not-policy): it never judges a
+  cap value, only flags a cap that is structurally inert. Advisory-only — it never gates enforcement;
+  `parsePolicy` stays the trust gate. New barrel exports: `lintPolicy`, and the `PolicyLintFinding` /
+  `PolicyLintKind` types. (D-043.)
+
+### Fixed
+- **Export writers no longer crash on a missing parent directory.** `writeSnapshotExport` /
+  `writeAuditExport` threw `ENOENT` when the target's parent did not exist — and the README's own
+  `./export/snapshot.json` example triggered it. They now create the parent recursively, owner-only
+  (`0o700`, matching the `0o600` file), so a fresh export subdirectory just works; an existing dir's
+  mode is left untouched.
+
+### Security / internal
+- **The no-egress static proof is now non-vacuous, and the core provably cannot spawn a subprocess
+  (D-042).** The import-denylist half of the no-egress proof matched module bans against
+  string-stripped code, so the module specifier was blanked before the pattern ran — a planted
+  `node:net` import passed the "no-egress" test. Fixed (comment-stripped-but-string-kept matching,
+  mutation-proven across static/dynamic/`require` forms), and `child_process` / `http2` are now
+  genuinely forbidden in the core. No runtime behavior change — the guarantee was always true, but now
+  the proof actually backs it.
+
+### Docs / tooling
+- `npm run verify` mirrors CI locally (typecheck + test + the generated-artifact staleness gates that
+  live outside `npm test`). The guard is now dogfooded against the published `x402-bench`. README
+  stranger-readiness fixes: a peer-install prerequisite for the wiring examples, clone-context on the
+  from-source `npm test` block, and absolute repo URLs for the documentation index + demo GIF so they
+  resolve from a locally-installed README too.
+
 ## [0.6.0] — 2026-07-28
 
 Additive since 0.5.0 — the **integration + decision-sink** chapter. No breaking change.
